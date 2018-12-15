@@ -306,13 +306,23 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     } yield scriptOpt
   }.runSync
 
-  override def hasAssetScript(id: AssetId): Boolean = ???
+  override def hasAssetScript(id: AssetId): Boolean =
+    assetScript(id).isDefined
 
   override def accountData(acc: Address): AccountDataInfo = ???
 
   override def accountData(acc: Address, key: String): Option[DataEntry[_]] = ???
 
-  override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = ???
+  override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = {
+    sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].unique.flatMap { addressId =>
+      mayBeAssetId match {
+        case Some(assetId) =>
+          sql"SELECT amount FROM assets_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM assets_balances WHERE address_id=$addressId)".query[Long].option
+        case None =>
+          sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)".query[Long].option
+      }
+    }.runSync.getOrElse(0L)
+  }
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
 
