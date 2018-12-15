@@ -1,14 +1,15 @@
 package com.wavesplatform.state
 
-import com.wavesplatform.account.{Address, Alias}
+import com.wavesplatform.account.{Address, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.{AssetId, Transaction, ValidationError}
+import com.wavesplatform.transaction.{AssetId, PaymentTransaction, Transaction, ValidationError}
 import monix.eval.Task
 import monix.execution.Scheduler
+import scorex.crypto.signatures.PublicKey
 
 trait Blockchain {
   def height: Int
@@ -120,17 +121,37 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     for {
       h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
       target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
-    } yield ((BigInt("18446744073709551616") / target.toBigInt()))
+    } yield BigInt("18446744073709551616") / target.toBigInt()
   }.runSync
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = {
     for {
-      target     <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
-    } yield (target.map( t => (BigInt("18446744073709551616") / t.toBigInt())))
+      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
+    } yield (target.map(t => BigInt("18446744073709551616") / t.toBigInt()))
   }.runSync
 
+  override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = {
+    for {
+      h <- sql"SELECT max(height) FROM blocks".query[Int].unique
+    } yield ()
+  }
 
-  override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = ???
+  def paymentTx = {
+    implicit val pkGet: Get[PublicKeyAccount] = {
+      Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
+    }
+
+    implicit val addressGet: Get[Address] = {
+      Get[String].map(s => Address.fromString(s).right.get)
+    }
+
+    implicit val byteStrGet: Get[ByteStr] = {
+      Get[String].map(s => ByteStr.decodeBase58(s).get)
+    }
+
+    implicit val get: Get[PaymentTransaction] = {}
+    sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions".query[PaymentTransaction]
+  }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
