@@ -85,8 +85,7 @@ object Dependencies {
   lazy val monix = Def.setting(
     Seq(
       // exclusion and explicit dependency can likely be removed when monix 3 is released
-      ("io.monix" %%% "monix" % "3.0.0-RC1").exclude("org.typelevel", "cats-effect_2.12"),
-      "org.typelevel" %%% "cats-effect" % "0.10.1"
+      "io.monix" %%% "monix" % "3.0.0-RC2"
     ))
   lazy val scodec    = Def.setting(Seq("org.scodec" %%% "scodec-core" % "1.10.3"))
   lazy val fastparse = Def.setting(Seq("com.lihaoyi" %%% "fastparse" % "1.0.0", "org.bykn" %%% "fastparse-cats-core" % "0.1.0"))
@@ -113,6 +112,8 @@ object Dependencies {
 
     // Start with this one
     "org.tpolecat" %% "doobie-core"      % "0.6.0",
+    "org.tpolecat" %% "doobie-hikari"    % "0.6.0",
+    "org.tpolecat" %% "doobie-postgres"  % "0.6.0"
 
     // And add any of these as needed
 //    "org.tpolecat" %% "doobie-h2"        % "0.6.0",          // H2 driver 1.4.197 + type mappings.

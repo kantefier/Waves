@@ -258,7 +258,7 @@ case class BlocksApiRoute(settings: RestAPISettings,
   def checkpoint: Route = (path("checkpoint") & post) {
     json[Checkpoint] { checkpoint =>
       checkpointProc(checkpoint)
-        .runAsync(rollbackExecutor)
+        .runToFuture(rollbackExecutor)
         .map {
           _.map(score => allChannels.broadcast(LocalScoreChanged(score.getOrElse(blockchain.score))))
         }

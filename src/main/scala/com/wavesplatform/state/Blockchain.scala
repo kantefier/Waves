@@ -6,6 +6,8 @@ import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction.{AssetId, Transaction, ValidationError}
+import monix.eval.Task
+import monix.execution.Scheduler
 
 trait Blockchain {
   def height: Int
@@ -82,4 +84,28 @@ trait Blockchain {
 
   def append(diff: Diff, carryFee: Long, block: Block): Unit
   def rollbackTo(targetBlockId: ByteStr): Either[String, Seq[Block]]
+}
+
+class SqlDb(implicit scheduler: Scheduler) {
+  import scala.concurrent.duration._
+
+  import doobie._
+  import cats._
+  import cats.effect._
+  import cats.implicits._
+  import doobie.implicits._
+
+  val timeout = 2.seconds
+
+  val xa = Transactor.fromDriverManager[Task](
+    "org.postgresql.Driver", // driver classname
+    "jdbc:postgresql:world", // connect URL (driver-specific)
+    "postgres", // user
+    "" // password
+  )
+
+  implicit class BlockingQuery[T](conn: ConnectionIO[T]) {
+    def runBlocking: T = conn.transact(xa).runSyncUnsafe(timeout)
+  }
+
 }

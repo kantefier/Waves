@@ -87,7 +87,7 @@ object Importer extends ScorexLogging {
                   } else {
                     val block = Block.parseBytes(buffer).get
                     if (blockchainUpdater.lastBlockId.contains(block.reference)) {
-                      Await.result(extAppender.apply(block).runAsync, Duration.Inf) match {
+                      Await.result(extAppender.apply(block).runToFuture, Duration.Inf) match {
                         case Left(ve) =>
                           log.error(s"Error appending block: $ve")
                           quit = true
