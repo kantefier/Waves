@@ -261,20 +261,11 @@ CREATE TABLE public.set_asset_script_transactions
 CREATE TABLE public.addresses
 (
   id      BIGINT            NOT NULL PRIMARY KEY,
-  address character varying NOT NULL,
-
-);
-
--- Waves balance history
-CREATE TABLE public.waves_balance_history
-(
-  address_id BIGINT    NOT NULL REFERENCES public.addresses ("id"),
-  heights    integer[] NOT NULL,
-  PRIMARY KEY (address_id)
+  address character varying NOT NULL UNIQUE
 );
 
 -- current Waves balance
-CREATE TABLE public.current_waves_balance
+CREATE TABLE public.waves_balances
 (
   address_id BIGINT  NOT NULL REFERENCES public.addresses ("id"),
   height     integer NOT NULL REFERENCES "public"."blocks" ("height"),
@@ -285,23 +276,16 @@ CREATE TABLE public.current_waves_balance
 -- Assets for address
 CREATE TABLE public.addresses_assets
 (
-  address_id BIGINT              NOT NULL REFERENCES public.addresses ("id"),
-  assets     character varying[] NOT NULL,
-  PRIMARY KEY (address_id)
-);
-
--- Assets balance history
-CREATE TABLE public.assets_balance_history
-(
   address_id BIGINT            NOT NULL REFERENCES public.addresses ("id"),
-  asset_id   character varying NOT NULL,
-  heights    integer[]         NOT NULL
+  asset_id   character varying NOT NULL REFERENCES public.issue_transactions ("id"),
+  PRIMARY KEY (address_id, asset_id)
 );
 
 -- current Asset balance
-CREATE TABLE public.current_asset_balance
+CREATE TABLE public.asset_balances
 (
   address_id BIGINT            NOT NULL REFERENCES public.addresses ("id"),
+  height     integer           NOT NULL REFERENCES "public"."blocks" ("height"),
   asset_id   character varying NOT NULL,
   amount     BIGINT,
   PRIMARY KEY (address_id, asset_id)
@@ -400,6 +384,15 @@ CREATE TABLE public.address_scripts_at_height
   height     integer NOT NULL REFERENCES "public"."blocks" ("height"),
   script     bytea,
   PRIMARY KEY (address_id, height)
+);
+
+-- Script for assetId at height
+CREATE TABLE public.asset_scripts_at_height
+(
+  asset_id   character varying  NOT NULL REFERENCES public.issue_transactions ("id"),
+  height     integer            NOT NULL REFERENCES "public"."blocks" ("height"),
+  script     bytea,
+  PRIMARY KEY (asset_id, height)
 );
 
 -- Approved features
