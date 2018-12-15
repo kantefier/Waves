@@ -1,5 +1,6 @@
 package com.wavesplatform.state
 
+import cats.data.OptionT
 import com.wavesplatform.account.{Address, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
@@ -118,20 +119,25 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     def runSync: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
+  import DoobieGetInstances._
+
   override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runSync
 
   override def score: BigInt = {
     for {
-      h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
-      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
-    } yield BigInt("18446744073709551616") / target.toBigInt()
+      h     <- sql"SELECT max(height) FROM blocks".query[Int].unique
+      score <- sql"SELECT height_score FROM blocks WHERE height = $h".query[BigInt].unique
+    } yield score
   }.runSync
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = {
     for {
-      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
-    } yield (target.map(t => BigInt("18446744073709551616") / t.toBigInt()))
-  }.runSync
+      refAndHeightScore <- OptionT.apply(
+        sql"SELECT reference, height_score FROM blocks WHERE signature = '${blockId.toString}'".query[(ByteStr, BigInt)].option)
+      (reference, heightScore) = refAndHeightScore
+      previousHeightScore <- OptionT.apply(sql"SELECT height_score FROM blocks WHERE signature = '${reference.toString}'".query[BigInt].option)
+    } yield heightScore - previousHeightScore
+  }.value.runSync
 
   override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = {
     for {
@@ -140,8 +146,6 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
     ???
   }
-
-  import DoobieGetInstances._
 
   def paymentTx = {
 
@@ -176,11 +180,14 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def carryFee: Long = ???
 
-  override def blockBytes(height: Int): Option[Array[Byte]] = ???
+  override def blockBytes(height: Int): Option[Array[Byte]] =
+    sql"SELECT block_bytes from blocks WHERE height = $height".query[Array[Byte]].option.runSync
 
-  override def blockBytes(blockId: AssetId): Option[Array[Byte]] = ???
+  override def blockBytes(blockId: ByteStr): Option[Array[Byte]] =
+    sql"SELECT block_bytes from blocks WHERE signature = ${blockId.toString}".query[Array[Byte]].option.runSync
 
-  override def heightOf(blockId: AssetId): Option[Int] = ???
+  override def heightOf(blockId: ByteStr): Option[Int] =
+    sql"SELECT height from blocks WHERE signature = '${blockId.toString}'".query[Int].option.runSync
 
   /** Returns the most recent block IDs, starting from the most recent  one */
   override def lastBlockIds(howMany: Int): Seq[AssetId] = ???
