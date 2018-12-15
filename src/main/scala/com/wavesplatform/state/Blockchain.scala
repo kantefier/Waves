@@ -104,8 +104,16 @@ class SqlDb(implicit scheduler: Scheduler) {
     "" // password
   )
 
-  implicit class BlockingQuery[T](conn: ConnectionIO[T]) {
+
+  /**
+    *
+    * run your shit sql"SELECT * FROM BLOCKCHAIN".query[Int].unique.runBlocking
+    *
+    */
+
+  private implicit class BlockingQuery[T](conn: ConnectionIO[T]) {
     def runBlocking: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
+
 
 }
