@@ -215,7 +215,12 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def lastBlock: Option[Block] = ???
 
-  override def carryFee: Long = ???
+  override def carryFee: Long = {
+    for {
+      currentHeight <- sql"SELECT max(height) FROM blocks".query[Int].unique
+      blockFee      <- sql"SELECT carry_fee FROM blocks WHERE height = $currentHeight".query[Long].unique
+    } yield blockFee
+  }.runSync
 
   override def blockBytes(height: Int): Option[Array[Byte]] =
     sql"SELECT block_bytes FROM blocks WHERE height = $height".query[Array[Byte]].option.runSync
@@ -283,7 +288,14 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   /** Retrieves Waves balance snapshot in the [from, to] range (inclusive) */
   override def balanceSnapshots(address: Address, from: Int, to: Int): Seq[BalanceSnapshot] = ???
 
-  override def accountScript(address: Address): Option[Script] = ???
+  override def accountScript(address: Address): Option[Script] = {
+    // address -> addressId -> accountScriptHistory -> accountScript
+    for {
+      addressId  <- sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].unique
+      lastHeight <- sql"SELECT max(height) FROM account_script_history WHERE account_id=$addressId".query[Int].unique
+      scriptOpt  <- sql"SELECT script FROM address_scripts_at_height WHERE address_id=$addressId AND height=$lastHeight".query[Script].option
+    } yield scriptOpt
+  }.runSync
 
   override def hasScript(address: Address): Boolean = ???
 
@@ -333,6 +345,9 @@ object DoobieGetInstances {
 
   implicit val proofsMeta: Meta[Proofs] =
     Meta[Array[String]].imap(s => Proofs(s.map(x => ByteStr.decodeBase58(x).get)))(_.base58().toArray)
+
+  implicit val intArray: Meta[Seq[Int]] =
+    Meta[Array[Int]].imap(_.toSeq)(seq => Array.apply(seq: _*))
 
   implicit val scriptMeta: Meta[Script] =
     Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)

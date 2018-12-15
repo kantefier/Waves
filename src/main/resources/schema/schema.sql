@@ -442,3 +442,10 @@ CREATE TABLE public.assets_script_history
   PRIMARY KEY (asset_id)
 );
 
+-- Script history for accountId
+CREATE TABLE public.account_script_history
+(
+  account_id BIGINT    NOT NULL,
+  heights    INTEGER[] NOT NULL,
+  PRIMARY KEY (account_id)
+);
