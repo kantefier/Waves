@@ -6,11 +6,11 @@ import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
-import com.wavesplatform.transaction.lease.LeaseTransaction
+import com.wavesplatform.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction._
-import com.wavesplatform.transaction.assets.exchange.{ExchangeTransactionV2, Order}
-import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2}
+import com.wavesplatform.transaction.{transfer, _}
+import com.wavesplatform.transaction.assets.exchange.{ExchangeTransaction, ExchangeTransactionV2, Order}
+import com.wavesplatform.transaction.assets._
 import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
@@ -367,6 +367,28 @@ object DoobieGetInstances {
       case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
+
+
+  def queryForTx = {
+
+  }
+
+  val txTypeIdToTable = Map(
+    PaymentTransaction.typeId -> "payment_transactions",
+    IssueTransaction.typeId -> "issue_transactions",
+    TransferTransaction.typeId -> "transfer_transactions",
+    ReissueTransaction.typeId ->"reissue_transactions",
+    BurnTransaction.typeId -> "burn_transactions",
+    ExchangeTransaction.typeId -> "exchange_transactions",
+    LeaseTransaction.typeId -> "lease_transactions",
+    LeaseCancelTransaction.typeId -> "lease_cancel_transactions",
+    CreateAliasTransaction.typeId -> "create_alias_transactions",
+    MassTransferTransaction.typeId -> "mass_transfer_transactions",
+    DataTransaction.typeId -> "data_transactions",
+    SetScriptTransaction.typeId -> "set_script_transactions",
+    SponsorFeeTransaction.typeId -> "sponsor_fee_transactions",
+    SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
+  )
 
 //  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
 //    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
