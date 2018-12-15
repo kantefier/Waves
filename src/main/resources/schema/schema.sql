@@ -13,6 +13,7 @@ CREATE TABLE public.blocks
   height                             integer                     NOT NULL PRIMARY KEY,
   features                           smallint[],
   block_bytes                        bytea                       NOT NULL
+  height_score                       bigint,                     NOT NULL
 );
 
 -- common table for all transactions

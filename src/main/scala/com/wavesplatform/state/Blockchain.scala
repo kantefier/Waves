@@ -1,14 +1,19 @@
 package com.wavesplatform.state
 
-import com.wavesplatform.account.{Address, Alias}
+import cats.data.OptionT
+import com.wavesplatform.account.{Address, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.{AssetId, Transaction, ValidationError}
+import com.wavesplatform.transaction._
+import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1}
+import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
+import scorex.crypto.encode.Base58
+import scorex.crypto.signatures.PublicKey
 
 trait Blockchain {
   def height: Int
@@ -114,23 +119,60 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     def runSync: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
+  import DoobieGetInstances._
+
   override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runSync
 
   override def score: BigInt = {
     for {
-      h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
-      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
-    } yield ((BigInt("18446744073709551616") / target.toBigInt()))
+      h     <- sql"SELECT max(height) FROM blocks".query[Int].unique
+      score <- sql"SELECT height_score FROM blocks WHERE height = $h".query[BigInt].unique
+    } yield score
   }.runSync
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = {
     for {
-      target     <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
-    } yield (target.map( t => (BigInt("18446744073709551616") / t.toBigInt())))
-  }.runSync
+      refAndHeightScore <- OptionT.apply(
+        sql"SELECT reference, height_score FROM blocks WHERE signature = '${blockId.toString}'".query[(ByteStr, BigInt)].option)
+      (reference, heightScore) = refAndHeightScore
+      previousHeightScore <- OptionT.apply(sql"SELECT height_score FROM blocks WHERE signature = '${reference.toString}'".query[BigInt].option)
+    } yield heightScore - previousHeightScore
+  }.value.runSync
 
+  override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = {
+    for {
+      h <- sql"SELECT max(height) FROM blocks".query[Int].unique
+    } yield ()
 
-  override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = ???
+    ???
+  }
+
+  def paymentTx = {
+
+    sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions"
+      .query[PaymentTransaction]
+      .unique
+      .runSync
+  }
+
+  def genesisTx = {
+    sql"SELECT address, amount, time_stamp AS timestamp, signature FROM genesis_transactions"
+      .query[GenesisTransaction]
+      .unique
+      .runSync
+  }
+
+  def issueTx = {
+    val v1 =
+      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signatur FROM issue_transaction"
+        .query[IssueTransactionV1]
+//    for {
+//      version <- sql"SELECT tx_type FROM issue_transaction".query[Byte].unique
+//    } sql"SELECT address, amount, time_stamp AS timestamp, signature FROM issue_transactions"
+//      .query[IssueTransaction]
+//      .unique
+//      .runSync
+  }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
@@ -212,4 +254,32 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
   override def append(diff: Diff, carryFee: Long, block: Block): Unit                                  = ???
   override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]]                          = ???
+}
+
+object DoobieGetInstances {
+
+  implicit val bigIntGet: Get[BigInt] = {
+    Get[BigDecimal].map(_.toBigInt())
+  }
+
+  implicit val arrayByteGet: Get[Array[Byte]] = {
+    Get[String].map(s => Base58.decode(s).get)
+  }
+
+  implicit val byteStrGet: Get[ByteStr] = {
+    Get[String].map(s => ByteStr.decodeBase58(s).get)
+  }
+
+  implicit val pkGet: Get[PublicKeyAccount] = {
+    Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
+  }
+
+  implicit val addressGet: Get[Address] = {
+    Get[String].map(s => Address.fromString(s).right.get)
+  }
+
+//  implicit val issueTransactionGet: Get[IssueTransaction]  = {
+//    Get[(Byte, )]
+//  }
+
 }
