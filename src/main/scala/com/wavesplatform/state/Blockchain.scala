@@ -384,25 +384,22 @@ object DoobieGetInstances {
     }
   }
 
-
-  def queryForTx = {
-
-  }
+  def queryForTx = {}
 
   val txTypeIdToTable = Map(
-    PaymentTransaction.typeId -> "payment_transactions",
-    IssueTransaction.typeId -> "issue_transactions",
-    TransferTransaction.typeId -> "transfer_transactions",
-    ReissueTransaction.typeId ->"reissue_transactions",
-    BurnTransaction.typeId -> "burn_transactions",
-    ExchangeTransaction.typeId -> "exchange_transactions",
-    LeaseTransaction.typeId -> "lease_transactions",
-    LeaseCancelTransaction.typeId -> "lease_cancel_transactions",
-    CreateAliasTransaction.typeId -> "create_alias_transactions",
-    MassTransferTransaction.typeId -> "mass_transfer_transactions",
-    DataTransaction.typeId -> "data_transactions",
-    SetScriptTransaction.typeId -> "set_script_transactions",
-    SponsorFeeTransaction.typeId -> "sponsor_fee_transactions",
+    PaymentTransaction.typeId        -> "payment_transactions",
+    IssueTransaction.typeId          -> "issue_transactions",
+    TransferTransaction.typeId       -> "transfer_transactions",
+    ReissueTransaction.typeId        -> "reissue_transactions",
+    BurnTransaction.typeId           -> "burn_transactions",
+    ExchangeTransaction.typeId       -> "exchange_transactions",
+    LeaseTransaction.typeId          -> "lease_transactions",
+    LeaseCancelTransaction.typeId    -> "lease_cancel_transactions",
+    CreateAliasTransaction.typeId    -> "create_alias_transactions",
+    MassTransferTransaction.typeId   -> "mass_transfer_transactions",
+    DataTransaction.typeId           -> "data_transactions",
+    SetScriptTransaction.typeId      -> "set_script_transactions",
+    SponsorFeeTransaction.typeId     -> "sponsor_fee_transactions",
     SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
   )
 
