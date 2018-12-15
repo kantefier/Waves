@@ -7,9 +7,11 @@ import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
+import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1}
 import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
+import scorex.crypto.encode.Base58
 import scorex.crypto.signatures.PublicKey
 
 trait Blockchain {
@@ -143,7 +145,6 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   def paymentTx = {
 
-
     sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions"
       .query[PaymentTransaction]
       .unique
@@ -158,10 +159,15 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   }
 
   def issueTx = {
-    sql"SELECT address, amount, time_stamp AS timestamp, signature FROM genesis_transactions"
-      .query[IssueTransaction]
-      .unique
-      .runSync
+    val v1 =
+      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signatur FROM issue_transaction"
+        .query[IssueTransactionV1]
+//    for {
+//      version <- sql"SELECT tx_type FROM issue_transaction".query[Byte].unique
+//    } sql"SELECT address, amount, time_stamp AS timestamp, signature FROM issue_transactions"
+//      .query[IssueTransaction]
+//      .unique
+//      .runSync
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -248,9 +254,12 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
 object DoobieGetInstances {
 
-
   implicit val bigIntGet: Get[BigInt] = {
     Get[BigDecimal].map(_.toBigInt())
+  }
+
+  implicit val arrayByteGet: Get[Array[Byte]] = {
+    Get[String].map(s => Base58.decode(s).get)
   }
 
   implicit val byteStrGet: Get[ByteStr] = {
@@ -265,5 +274,8 @@ object DoobieGetInstances {
     Get[String].map(s => Address.fromString(s).right.get)
   }
 
+//  implicit val issueTransactionGet: Get[IssueTransaction]  = {
+//    Get[(Byte, )]
+//  }
 
 }
