@@ -389,9 +389,9 @@ CREATE TABLE public.address_scripts_at_height
 -- Script for assetId at height
 CREATE TABLE public.asset_scripts_at_height
 (
-  asset_id   character varying  NOT NULL REFERENCES public.issue_transactions ("id"),
-  height     integer            NOT NULL REFERENCES "public"."blocks" ("height"),
-  script     bytea,
+  asset_id character varying NOT NULL REFERENCES public.issue_transactions ("id"),
+  height   integer           NOT NULL REFERENCES "public"."blocks" ("height"),
+  script   bytea,
   PRIMARY KEY (asset_id, height)
 );
 
@@ -414,8 +414,8 @@ CREATE TABLE public.data_history
 (
   address_id BIGINT            NOT NULL REFERENCES public.addresses ("id"),
   key        character varying NOT NULL,
-  heights    INTEGER[]         NOT NULL,
-  PRIMARY KEY (address_id, key)
+  height     integer           NOT NULL REFERENCES "public"."blocks" ("height"),
+  PRIMARY KEY (address_id, key, height)
 );
 
 -- Sponsorship history
