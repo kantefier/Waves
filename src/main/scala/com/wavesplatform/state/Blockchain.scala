@@ -1,7 +1,7 @@
 package com.wavesplatform.state
 
 import cats.data.OptionT
-import com.wavesplatform.account.{Address, Alias, PublicKeyAccount}
+import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
@@ -9,6 +9,7 @@ import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
 import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2}
+import com.wavesplatform.transaction.transfer.{TransferTransaction, TransferTransactionV1, TransferTransactionV2}
 import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -181,7 +182,20 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
       v <- sql"SELECT tx_version FROM issue_transaction".query[Byte].unique
       q <- chooseV(v).unique
     } yield q).runSync
+  }
 
+  def transferTx = {
+    val v1 =
+      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
+        .query[TransferTransactionV1]
+        .map(t => t.asInstanceOf[TransferTransaction])
+
+    val v2 =
+      sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
+        .query[TransferTransactionV2]
+        .map(t => t.asInstanceOf[TransferTransaction])
+
+    if (true) v1 else v2
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -308,6 +322,12 @@ object DoobieGetInstances {
   implicit val scriptGet: Get[Script] = {
     Get[String].map { s =>
       Script.fromBase64String(s).right.get
+    }
+  }
+
+  implicit val addressOrAlias: Get[AddressOrAlias] = {
+    Get[String].map { s =>
+      AddressOrAlias.fromString(s).right.get
     }
   }
 
