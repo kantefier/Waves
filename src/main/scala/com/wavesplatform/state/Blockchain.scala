@@ -1,6 +1,6 @@
 package com.wavesplatform.state
 
-import cats.data.OptionT
+import cats.data.{NonEmptyList, OptionT}
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
@@ -8,19 +8,17 @@ import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
 import com.wavesplatform.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.{transfer, _}
-import com.wavesplatform.transaction.assets.exchange.{ExchangeTransaction, ExchangeTransactionV2, Order}
+import com.wavesplatform.transaction._
+import com.wavesplatform.transaction.assets.exchange._
 import com.wavesplatform.transaction.assets._
 import com.wavesplatform.transaction.smart.SetScriptTransaction
-import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
-import doobie.Get
-import doobie.util.{Meta, Read, Write}
+import doobie.util.{Get, Meta, Read, Write}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.postgresql.util.PGobject
+import play.api.libs.json.Json
 import scorex.crypto.encode.Base58
-import scorex.crypto.signatures.PublicKey
 
 trait Blockchain {
   def height: Int
@@ -191,6 +189,7 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   }
 
   def exTx = {
+    sql"".query[ExchangeTransactionV1]
     sql"".query[SetScriptTransaction]
     sql"".query[BooleanDataEntry]
     sql"".query[BinaryDataEntry]
@@ -370,6 +369,25 @@ object DoobieGetInstances {
 
   implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
     Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
+
+  val order1Meta: Get[Order] = {
+    import OrderJson._
+    Get.Advanced.other[PGobject](NonEmptyList.of("json")).tmap { o =>
+      Json.parse(o.getValue).as[Order]
+    }
+  }
+
+  implicit val orderV1Meta: Get[OrderV1] = {
+    order1Meta.map { order =>
+      order.asInstanceOf[OrderV1]
+    }
+  }
+
+  implicit val orderV2Meta: Get[OrderV2] = {
+    order1Meta.map { order =>
+      order.asInstanceOf[OrderV2]
+    }
+  }
 
   implicit val dataEntryRead: Read[DataEntry[_]] = Read[(String, String, Long, Boolean, String, String)].map {
     case (dataKey, dataType, integer, boolean, binary, string) =>
