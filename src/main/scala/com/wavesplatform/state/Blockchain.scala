@@ -193,7 +193,14 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   /** Returns a chain of blocks starting with the block with the given ID (from oldest to newest) */
   override def blockIdsAfter(parentSignature: AssetId, howMany: Int): Option[Seq[AssetId]] = ???
 
-  override def parent(block: Block, back: Int): Option[Block] = ???
+  override def parent(block: Block, back: Int): Option[Block] = ??? /* {
+    for {
+      parentHeight <- OptionT(sql"SELECT height from blocks WHERE signature = '${block.reference.toString}'".query[Int].option)
+      targetHeight = parentHeight - back + 1
+      resultBlock <- blockAt(targetHeight)
+    } ???
+    ???
+  }*/
 
   /** Features related */
   override def approvedFeatures: Map[Short, Int] = ???
@@ -204,9 +211,9 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def portfolio(a: Address): Portfolio = ???
 
-  override def transactionInfo(id: AssetId): Option[(Int, Transaction)] = ???
+  override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
-  override def transactionHeight(id: AssetId): Option[Int] = ???
+  override def transactionHeight(id: ByteStr): Option[Int] = ???
 
   override def addressTransactions(address: Address, types: Set[Type], count: Int, fromId: Option[AssetId]): Either[String, Seq[(Int, Transaction)]] =
     ???
@@ -217,9 +224,9 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def resolveAlias(a: Alias): Either[ValidationError, Address] = ???
 
-  override def leaseDetails(leaseId: AssetId): Option[LeaseDetails] = ???
+  override def leaseDetails(leaseId: ByteStr): Option[LeaseDetails] = ???
 
-  override def filledVolumeAndFee(orderId: AssetId): VolumeAndFee = ???
+  override def filledVolumeAndFee(orderId: ByteStr): VolumeAndFee = ???
 
   /** Retrieves Waves balance snapshot in the [from, to] range (inclusive) */
   override def balanceSnapshots(address: Address, from: Int, to: Int): Seq[BalanceSnapshot] = ???
