@@ -13,7 +13,7 @@ import com.wavesplatform.transaction.assets.exchange._
 import com.wavesplatform.transaction.assets._
 import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
-import doobie.util.{Get, Meta, Read, Write}
+import doobie.util._
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.postgresql.util.PGobject
@@ -386,21 +386,42 @@ object DoobieGetInstances {
   implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
     Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
 
-  val order1Meta: Get[Order] = {
+  val orderGet: Get[Order] = {
     import OrderJson._
     Get.Advanced.other[PGobject](NonEmptyList.of("json")).tmap { o =>
       Json.parse(o.getValue).as[Order]
     }
   }
 
-  implicit val orderV1Meta: Get[OrderV1] = {
-    order1Meta.map { order =>
+  val orderPut: Put[Order] = {
+    Put.Advanced.other[PGobject](NonEmptyList.of("json")).tcontramap[Order] { order =>
+      val o = new PGobject
+      o.setType("json")
+      o.setValue(order.json().toString())
+      o
+    }
+  }
+
+  implicit val orderV1Put: Put[OrderV1] = {
+    orderPut.contramap { order =>
       order.asInstanceOf[OrderV1]
     }
   }
 
-  implicit val orderV2Meta: Get[OrderV2] = {
-    order1Meta.map { order =>
+  implicit val orderV2Put: Put[OrderV2] = {
+    orderPut.contramap { order =>
+      order.asInstanceOf[OrderV2]
+    }
+  }
+
+  implicit val orderV1Get: Get[OrderV1] = {
+    orderGet.map { order =>
+      order.asInstanceOf[OrderV1]
+    }
+  }
+
+  implicit val orderV2Get: Get[OrderV2] = {
+    orderGet.map { order =>
       order.asInstanceOf[OrderV2]
     }
   }
@@ -426,9 +447,6 @@ object DoobieGetInstances {
       case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
-
-
-
 //  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
 //    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
 //  }
