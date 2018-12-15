@@ -125,9 +125,9 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def score: BigInt = {
     for {
-      h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
-      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
-    } yield BigInt("18446744073709551616") / target.toBigInt()
+      h     <- sql"SELECT max(height) FROM blocks".query[Int].unique
+      score <- sql"SELECT height_score FROM blocks WHERE height = $h".query[BigInt].unique
+    } yield score
   }.runSync
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = {
