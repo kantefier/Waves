@@ -300,7 +300,8 @@ lazy val node = project
         Dependencies.ficus ++
         Dependencies.scorex ++
         Dependencies.commons_net ++
-        Dependencies.monix.value
+        Dependencies.monix.value ++
+        Dependencies.doobieStuff
   )
   .dependsOn(langJVM)
 
