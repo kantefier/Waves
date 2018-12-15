@@ -178,7 +178,7 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     }
 
     (for {
-      v <- sql"tx_version FROM issue_transaction".query[Byte].unique
+      v <- sql"SELECT tx_version FROM issue_transaction".query[Byte].unique
       q <- chooseV(v).unique
     } yield q).runSync
 
