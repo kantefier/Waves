@@ -191,20 +191,25 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def carryFee: Long = ???
 
   override def blockBytes(height: Int): Option[Array[Byte]] =
-    sql"SELECT block_bytes from blocks WHERE height = $height".query[Array[Byte]].option.runSync
+    sql"SELECT block_bytes FROM blocks WHERE height = $height".query[Array[Byte]].option.runSync
 
   override def blockBytes(blockId: ByteStr): Option[Array[Byte]] =
-    sql"SELECT block_bytes from blocks WHERE signature = ${blockId.toString}".query[Array[Byte]].option.runSync
+    sql"SELECT block_bytes FROM blocks WHERE signature = ${blockId.toString}".query[Array[Byte]].option.runSync
 
   override def heightOf(blockId: ByteStr): Option[Int] =
-    sql"SELECT height from blocks WHERE signature = '${blockId.toString}'".query[Int].option.runSync
+    sql"SELECT height FROM blocks WHERE signature = '${blockId.toString}'".query[Int].option.runSync
 
   /** Returns the most recent block IDs, starting from the most recent  one */
   override def lastBlockIds(howMany: Int): Seq[ByteStr] =
-    sql"SELECT signature from blocks ORDER BY height DESC".query[ByteStr].stream.take(howMany).compile.toList.runSync.toSeq
+    sql"SELECT signature FROM blocks ORDER BY height DESC".query[ByteStr].stream.take(howMany).compile.toList.runSync
 
   /** Returns a chain of blocks starting with the block with the given ID (from oldest to newest) */
-  override def blockIdsAfter(parentSignature: AssetId, howMany: Int): Option[Seq[ByteStr]] = ???
+  override def blockIdsAfter(parentSignature: ByteStr, howMany: Int): Option[Seq[ByteStr]] = {
+    val parentHeight = heightOf(parentSignature).get
+    val blockIds =
+      sql"SELECT signature FROM blocks WHERE height >= $parentHeight ORDER BY height ASC".query[ByteStr].stream.take(howMany).compile.toList.runSync
+    Option(blockIds).filter(_.nonEmpty)
+  }
 
   override def parent(block: Block, back: Int): Option[Block] = ??? /* {
     for {
