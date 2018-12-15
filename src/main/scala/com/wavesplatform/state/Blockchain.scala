@@ -10,9 +10,11 @@ import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
 import com.wavesplatform.transaction.assets.exchange.{ExchangeTransactionV2, Order}
 import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2}
-import com.wavesplatform.transaction.transfer.{TransferTransaction, TransferTransactionV1, TransferTransactionV2}
+import com.wavesplatform.transaction.smart.SetScriptTransaction
+import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
+import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
 import doobie.Get
-import doobie.util.Meta
+import doobie.util.{Meta, Read}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.postgresql.util.PGobject
@@ -187,9 +189,12 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     } yield q).runSync
   }
 
-//  def exTx = {
-//    sql"".query[ExchangeTransactionV2]
-//  }
+  def exTx = {
+    sql"".query[SetScriptTransaction]
+    sql"".query[BooleanDataEntry]
+    sql"".query[BinaryDataEntry]
+    sql"".query[StringDataEntry]
+  }
 
   def transferTx = {
     val v1 =
@@ -313,22 +318,41 @@ object DoobieGetInstances {
   implicit val publickKeyAccountkMeta: Meta[PublicKeyAccount] =
     Meta[String].imap(s => PublicKeyAccount.fromBase58String(s).right.get)(pka => Base58.encode(pka.publicKey))
 
-  implicit val addressMeta: Meta[Address] =
-    Meta[String].imap(s => Address.fromString(s).right.get)(_.address)
-
   implicit val proofsMeta: Meta[Proofs] =
     Meta[Array[String]].imap(s => Proofs(s.map(x => ByteStr.decodeBase58(x).get)))(_.base58().toArray)
 
   implicit val scriptMeta: Meta[Script] =
     Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)
 
+  implicit val addressMeta: Meta[Address] =
+    Meta[String].imap(s => Address.fromString(s).right.get)(_.address)
+
+  implicit val aliasMeta: Meta[Alias] =
+    Meta[String].imap(s => Alias.fromString(s).right.get)(_.stringRepr)
+
   implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
     Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
+
+  implicit val dataEntryRead: Read[DataEntry[_]] = {
+    Read[(String, String, Long, Boolean, String, String)].map {
+      case (dataKey, dataType, integer, boolean, binary, string) =>
+        dataType match {
+          case "integer" => IntegerDataEntry(dataKey, integer)
+          case "boolean" => BooleanDataEntry(dataKey, boolean)
+          case "binary"  => BinaryDataEntry(dataKey, ByteStr.decodeBase58(binary).get)
+          case "string"  => StringDataEntry(dataKey, string)
+        }
+    }
+  }
+
+//  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
+//    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
+//  }
 
 //  implicit val orderGet: Get[Order] = {
 //    Get[PGobject].map { json =>
 //      json
-//
+
 //    }
 //  }
 
