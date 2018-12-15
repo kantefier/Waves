@@ -8,7 +8,7 @@ import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
-import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1}
+import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2}
 import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -94,6 +94,7 @@ trait Blockchain {
 
 class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
+  val chainId = com.wavesplatform.account.AddressScheme.current
 
   import doobie._
   import cats._
@@ -164,14 +165,11 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   def issueTx = {
     val v1 =
-      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signatur FROM issue_transaction"
+      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
         .query[IssueTransactionV1]
-//    for {
-//      version <- sql"SELECT tx_type FROM issue_transaction".query[Byte].unique
-//    } sql"SELECT address, amount, time_stamp AS timestamp, signature FROM issue_transactions"
-//      .query[IssueTransaction]
-//      .unique
-//      .runSync
+    sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
+      .query[IssueTransactionV2]
+
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -282,12 +280,17 @@ object DoobieGetInstances {
     Get[String].map(s => Address.fromString(s).right.get)
   }
 
-  implicit val proofsGet = {
+  implicit val proofsGet: Get[Proofs] =
     Get[Array[String]].map { s =>
       Proofs(s.map(x => ByteStr.decodeBase58(x).get))
     }
 
+  implicit val scriptGet: Get[Script] = {
+    Get[String].map { s =>
+      Script.fromBase64String(s).right.get
+    }
   }
+
 //  implicit val issueTransactionGet: Get[IssueTransaction]  = {
 //    Get[(Byte, )]
 //  }
