@@ -11,7 +11,8 @@ CREATE TABLE public.blocks
   fee                                bigint                      NOT NULL,
   blocksize                          integer,
   height                             integer                     NOT NULL PRIMARY KEY,
-  features                           smallint[]
+  features                           smallint[],
+  height_score                       bigint,                     NOT NULL
 );
 
 -- common table for all transactions
