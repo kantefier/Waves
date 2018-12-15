@@ -13,7 +13,8 @@ CREATE TABLE public.blocks
   height                             integer                     NOT NULL PRIMARY KEY,
   features                           smallint[],
   block_bytes                        bytea                       NOT NULL,
-  height_score                       bigint                      NOT NULL
+  height_score                       bigint                      NOT NULL,
+  carry_fee                          bigint                      NOT NULL
 );
 
 -- common table for all transactions
@@ -260,7 +261,8 @@ CREATE TABLE public.set_asset_script_transactions
 CREATE TABLE public.addresses
 (
   id      BIGINT            NOT NULL PRIMARY KEY,
-  address character varying NOT NULL
+  address character varying NOT NULL,
+
 );
 
 -- Waves balance history
@@ -414,20 +416,29 @@ CREATE TABLE public.activated_features
   height integer NOT NULL REFERENCES "public"."blocks" ("height")
 );
 
+-- Data history
+CREATE TABLE public.data_history
+(
+  address_id BIGINT            NOT NULL REFERENCES public.addresses ("id"),
+  key        character varying NOT NULL,
+  heights    INTEGER[]         NOT NULL,
+  PRIMARY KEY (address_id, key)
+);
+
+-- Sponsorship history
+CREATE TABLE public.sponsorship_history
+(
+  asset_id character varying NOT NULL,
+  heights  INTEGER[]         NOT NULL,
+  PRIMARY KEY (asset_id)
+);
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+-- Script history for assetId
+CREATE TABLE public.assets_script_history
+(
+  asset_id character varying NOT NULL,
+  heights  INTEGER[]         NOT NULL,
+  PRIMARY KEY (asset_id)
+);
 
