@@ -1,27 +1,26 @@
 package com.wavesplatform.state
 
-import cats.syntax.monoid._
-import cats.data.OptionT
+import cats.data.{NonEmptyList, OptionT}
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
-import com.wavesplatform.database.Keys
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
 import com.wavesplatform.transaction._
-import com.wavesplatform.transaction.assets.exchange.ExchangeTransaction
+import com.wavesplatform.transaction.assets.exchange.{ExchangeTransaction, _}
 import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2, _}
 import com.wavesplatform.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
-import doobie.util.{Meta, Read, Write}
+import doobie.util.{Meta, Read, Write, _}
 import monix.eval.Task
 import monix.execution.Scheduler
+import org.postgresql.util.PGobject
+import play.api.libs.json.Json
 import scorex.crypto.encode.Base58
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 trait Blockchain {
   def height: Int
@@ -93,6 +92,7 @@ trait Blockchain {
   def allActiveLeases: Set[LeaseTransaction]
 
   /** Builds a new portfolio map by applying a partial function to all portfolios on which the function is defined.
+    *
     * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
   def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A]
 
@@ -104,9 +104,9 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
   val chainId = com.wavesplatform.account.AddressScheme.current.chainId
 
-  import doobie._
   import cats._
   import cats.implicits._
+  import doobie._
   import doobie.implicits._
 
   val timeout = 2.seconds
@@ -191,6 +191,7 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   }
 
   def exTx = {
+    sql"".query[ExchangeTransactionV1]
     sql"".query[SetScriptTransaction]
     sql"".query[BooleanDataEntry]
     sql"".query[BinaryDataEntry]
@@ -307,13 +308,32 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     } yield scriptOpt
   }.runSync
 
-  override def hasAssetScript(id: AssetId): Boolean = ???
+  override def hasAssetScript(id: AssetId): Boolean =
+    assetScript(id).isDefined
 
   override def accountData(acc: Address): AccountDataInfo = ???
 
   override def accountData(acc: Address, key: String): Option[DataEntry[_]] = ???
 
-  override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = ???
+  override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = {
+    sql"SELECT id FROM addresses WHERE address='${address.toString}'"
+      .query[BigInt]
+      .unique
+      .flatMap { addressId =>
+        mayBeAssetId match {
+          case Some(assetId) =>
+            sql"SELECT amount FROM assets_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM assets_balances WHERE address_id=$addressId)"
+              .query[Long]
+              .option
+          case None =>
+            sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)"
+              .query[Long]
+              .option
+        }
+      }
+      .runSync
+      .getOrElse(0L)
+  }
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
 
@@ -513,10 +533,35 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   }
 
   override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = ???
+
+  val txTypeIdToTable = Map(
+    PaymentTransaction.typeId        -> "payment_transactions",
+    IssueTransaction.typeId          -> "issue_transactions",
+    TransferTransaction.typeId       -> "transfer_transactions",
+    ReissueTransaction.typeId        -> "reissue_transactions",
+    BurnTransaction.typeId           -> "burn_transactions",
+    ExchangeTransaction.typeId       -> "exchange_transactions",
+    LeaseTransaction.typeId          -> "lease_transactions",
+    LeaseCancelTransaction.typeId    -> "lease_cancel_transactions",
+    CreateAliasTransaction.typeId    -> "create_alias_transactions",
+    MassTransferTransaction.typeId   -> "mass_transfer_transactions",
+    DataTransaction.typeId           -> "data_transactions",
+    SetScriptTransaction.typeId      -> "set_script_transactions",
+    SponsorFeeTransaction.typeId     -> "sponsor_fee_transactions",
+    SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
+  )
+
+  def txOnHeight(height: Int) = {
+    fr"WHERE height = $height"
+  }
+
+  def txWithId(id: ByteStr) = {
+    fr"WHERE id = '${id.base58}'"
+  }
 }
 
 object DoobieGetInstances {
-  import doobie.postgres._, doobie.postgres.implicits._
+  import doobie.postgres.implicits._
 
   implicit val bigIntMeta: Meta[BigInt] =
     Meta[BigDecimal].imap(_.toBigInt())(BigDecimal(_))
@@ -550,6 +595,46 @@ object DoobieGetInstances {
   implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
     Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
 
+  val orderGet: Get[Order] = {
+    import OrderJson._
+    Get.Advanced.other[PGobject](NonEmptyList.of("json")).tmap { o =>
+      Json.parse(o.getValue).as[Order]
+    }
+  }
+
+  val orderPut: Put[Order] = {
+    Put.Advanced.other[PGobject](NonEmptyList.of("json")).tcontramap[Order] { order =>
+      val o = new PGobject
+      o.setType("json")
+      o.setValue(order.json().toString())
+      o
+    }
+  }
+
+  implicit val orderV1Put: Put[OrderV1] = {
+    orderPut.contramap { order =>
+      order.asInstanceOf[OrderV1]
+    }
+  }
+
+  implicit val orderV2Put: Put[OrderV2] = {
+    orderPut.contramap { order =>
+      order.asInstanceOf[OrderV2]
+    }
+  }
+
+  implicit val orderV1Get: Get[OrderV1] = {
+    orderGet.map { order =>
+      order.asInstanceOf[OrderV1]
+    }
+  }
+
+  implicit val orderV2Get: Get[OrderV2] = {
+    orderGet.map { order =>
+      order.asInstanceOf[OrderV2]
+    }
+  }
+
   implicit val dataEntryRead: Read[DataEntry[_]] = Read[(String, String, Long, Boolean, String, String)].map {
     case (dataKey, dataType, integer, boolean, binary, string) =>
       dataType match {
@@ -571,39 +656,4 @@ object DoobieGetInstances {
       case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
-
-  def queryForTx = {}
-
-  val txTypeIdToTable = Map(
-    PaymentTransaction.typeId        -> "payment_transactions",
-    IssueTransaction.typeId          -> "issue_transactions",
-    TransferTransaction.typeId       -> "transfer_transactions",
-    ReissueTransaction.typeId        -> "reissue_transactions",
-    BurnTransaction.typeId           -> "burn_transactions",
-    ExchangeTransaction.typeId       -> "exchange_transactions",
-    LeaseTransaction.typeId          -> "lease_transactions",
-    LeaseCancelTransaction.typeId    -> "lease_cancel_transactions",
-    CreateAliasTransaction.typeId    -> "create_alias_transactions",
-    MassTransferTransaction.typeId   -> "mass_transfer_transactions",
-    DataTransaction.typeId           -> "data_transactions",
-    SetScriptTransaction.typeId      -> "set_script_transactions",
-    SponsorFeeTransaction.typeId     -> "sponsor_fee_transactions",
-    SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
-  )
-
-//  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
-//    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
-//  }
-
-//  implicit val orderGet: Get[Order] = {
-//    Get[PGobject].map { json =>
-//      json
-
-//    }
-//  }
-
-//  implicit val issueTransactionGet: Get[IssueTransaction]  = {
-//    Get[(Byte, )]
-//  }
-
 }

@@ -304,7 +304,7 @@ CREATE TABLE public.assets_info
 (
   asset_id      character varying NOT NULL,
   is_reissuable boolean           NOT NULL default false,
-  volume        bigint            not null,
+  volume        bigint            NOT NULL,
   height        integer           NOT NULL REFERENCES "public"."blocks" ("height"),
   PRIMARY KEY (asset_id, height)
 );
