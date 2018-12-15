@@ -105,20 +105,23 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     "" // password
   )
 
-
   /**
     *
     * run your shit sql"SELECT * FROM BLOCKCHAIN".query[Int].unique.runBlocking
     *
     */
-
   private implicit class BlockingQuery[T](conn: ConnectionIO[T]) {
     def runBlocking: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
-  override def height: Int = ???
+  override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runBlocking
 
-  override def score: BigInt = ???
+  override def score: BigInt = {
+    for {
+      h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
+      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
+    } yield ((BigInt("18446744073709551616") / target.toBigInt()))
+  }.runBlocking
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = ???
 
@@ -157,7 +160,8 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def transactionHeight(id: AssetId): Option[Int] = ???
 
-  override def addressTransactions(address: Address, types: Set[Type], count: Int, fromId: Option[AssetId]): Either[String, Seq[(Int, Transaction)]] = ???
+  override def addressTransactions(address: Address, types: Set[Type], count: Int, fromId: Option[AssetId]): Either[String, Seq[(Int, Transaction)]] =
+    ???
 
   override def containsTransaction(tx: Transaction): Boolean = ???
 
@@ -188,7 +192,10 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
 
-  override def assetDistributionAtHeight(assetId: AssetId, height: Int, count: Int, fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]] = ???
+  override def assetDistributionAtHeight(assetId: AssetId,
+                                         height: Int,
+                                         count: Int,
+                                         fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]] = ???
 
   override def wavesDistribution(height: Int): Map[Address, Long] = ???
 
@@ -198,6 +205,6 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     *
     * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
-override def append(diff: Diff, carryFee: Long, block: Block): Unit = ???
-override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = ???
+  override def append(diff: Diff, carryFee: Long, block: Block): Unit                                  = ???
+  override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]]                          = ???
 }
