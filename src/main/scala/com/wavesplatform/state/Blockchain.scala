@@ -141,17 +141,15 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
       Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
     }
 
-    implicit val pkGet: Get[Address] = {
+    implicit val addressGet: Get[Address] = {
       Get[String].map(s => Address.fromString(s).right.get)
     }
 
-    implicit val pkGet: Get[ByteStr] = {
+    implicit val byteStrGet: Get[ByteStr] = {
       Get[String].map(s => ByteStr.decodeBase58(s).get)
     }
 
-    implicit val get: Get[PaymentTransaction] = {
-
-    }
+    implicit val get: Get[PaymentTransaction] = {}
     sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions".query[PaymentTransaction]
   }
 
