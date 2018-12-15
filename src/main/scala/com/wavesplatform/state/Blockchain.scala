@@ -300,7 +300,12 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def hasScript(address: Address): Boolean =
     accountScript(address).isDefined
 
-  override def assetScript(id: AssetId): Option[Script] = ???
+  override def assetScript(id: AssetId): Option[Script] = {
+    for {
+      lastHeight <- sql"SELECT max(height) FROM assets_script_history WHERE asset_id=$id".query[Int].unique
+      scriptOpt  <- sql"SELECT script FROM asset_scripts_at_height WHERE asset_id=$id AND height=$lastHeight".query[Script].option
+    } yield scriptOpt
+  }.runSync
 
   override def hasAssetScript(id: AssetId): Boolean = ???
 

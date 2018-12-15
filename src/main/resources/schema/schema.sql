@@ -402,6 +402,15 @@ CREATE TABLE public.address_scripts_at_height
   PRIMARY KEY (address_id, height)
 );
 
+-- Script for assetId at height
+CREATE TABLE public.asset_scripts_at_height
+(
+  asset_id   character varying  NOT NULL REFERENCES public.issue_transactions ("id"),
+  height     integer            NOT NULL REFERENCES "public"."blocks" ("height"),
+  script     bytea,
+  PRIMARY KEY (asset_id, height)
+);
+
 -- Approved features
 CREATE TABLE public.approved_features
 (
