@@ -5,6 +5,7 @@ import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccou
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
+import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
@@ -266,7 +267,14 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def assetDescription(id: AssetId): Option[AssetDescription] = ???
 
-  override def resolveAlias(a: Alias): Either[ValidationError, Address] = ???
+  override def resolveAlias(a: Alias): Either[ValidationError, Address] = {
+    //TODO: check alias disabled (there's no such table currently, maybe we'll add it as s field to aliases table)
+    (for {
+      addressId <- OptionT(sql"SELECT address_id FROM aliases WHERE alias='${a.toString}'".query[BigInt].option)
+      address   <- OptionT(sql"SELECT address FROM addresses WHERE id='$addressId'".query[Address].option)
+    } yield address).value.runSync
+      .toRight(AliasDoesNotExist(a))
+  }
 
   override def leaseDetails(leaseId: ByteStr): Option[LeaseDetails] = ???
 
