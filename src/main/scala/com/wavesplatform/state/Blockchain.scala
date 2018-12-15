@@ -297,7 +297,8 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     } yield scriptOpt
   }.runSync
 
-  override def hasScript(address: Address): Boolean = ???
+  override def hasScript(address: Address): Boolean =
+    accountScript(address).isDefined
 
   override def assetScript(id: AssetId): Option[Script] = ???
 
