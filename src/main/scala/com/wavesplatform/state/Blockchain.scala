@@ -1,26 +1,27 @@
 package com.wavesplatform.state
 
+import cats.syntax.monoid._
 import cats.data.OptionT
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.database.Keys
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
+import com.wavesplatform.transaction._
+import com.wavesplatform.transaction.assets.exchange.ExchangeTransaction
+import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2, _}
 import com.wavesplatform.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
-import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.{transfer, _}
-import com.wavesplatform.transaction.assets.exchange.{ExchangeTransaction, ExchangeTransactionV2, Order}
-import com.wavesplatform.transaction.assets._
 import com.wavesplatform.transaction.smart.SetScriptTransaction
-import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
+import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
-import doobie.Get
 import doobie.util.{Meta, Read, Write}
 import monix.eval.Task
 import monix.execution.Scheduler
-import org.postgresql.util.PGobject
 import scorex.crypto.encode.Base58
-import scorex.crypto.signatures.PublicKey
+
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 trait Blockchain {
   def height: Int
@@ -105,7 +106,6 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   import doobie._
   import cats._
-  import cats.effect._
   import cats.implicits._
   import doobie.implicits._
 
@@ -330,8 +330,189 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     *
     * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
-  override def append(diff: Diff, carryFee: Long, block: Block): Unit                                  = ???
-  override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]]                          = ???
+
+  private def getExistingAddresses(addresses: Iterable[Address]): List[Address] = {
+    val addressesString = addresses.map(_.toString).mkString(",")
+    sql"SELECT address FROM addresses WHERE address IN ($addressesString)"
+      .query[String]
+      .stream
+      .map(Address.fromString(_).right.get)
+      .compile
+      .toList
+      .runSync
+  }
+
+  private def getExistingAssets(addressId: Long): List[ByteStr] = {
+    sql"SELECT asset_id FROM addresses_assets WHERE address_id = $addressId"
+      .query[String]
+      .stream
+      .map(ByteStr.decodeBase58(_).get)
+      .compile
+      .toList
+      .runSync
+  }
+
+  private def getVolumeAndFeeForOrderAtHeight(orderId: ByteStr): Option[VolumeAndFee] = {
+    sql"SELECT volume, fee FROM volume_and_fee_for_order_at_height WHERE order_id = ${orderId.toString} AND height = (SELECT MAX(height) FROM volume_and_fee_for_order_at_height t WHERE t.order_id = ${orderId.toString})"
+      .query[(Long, Long)]
+      .stream
+      .map(f => VolumeAndFee(f._1, f._2))
+      .compile
+      .toList
+      .runSync
+      .headOption
+  }
+
+  private def getLastAssetInfo(assetId: ByteStr): Option[AssetInfo] = {
+    sql"SELECT is_reissuable, volume FROM assets_info WHERE asset_id = ${assetId.toString} AND height = (SELECT MAX(height) FROM assets_info ai2 WHERE ai2.asset_id = ${assetId.toString})"
+      .query[AssetInfo]
+      .option
+      .runSync
+  }
+
+  private def insertAdresses(addresses: Iterable[Address]): Map[Long, Address] = {
+    val result = for (address <- addresses) yield {
+      sql"insert into addresses (address) values (${address.toString})".update.withUniqueGeneratedKeys[(Long, String)]("id", "address").runSync
+    }
+    result.toMap.mapValues(Address.fromString(_).right.get)
+  }
+
+  private def insertBlock(block: Block, height: Int, carryFee: Long): Unit = {
+    val prevlockScore: BigInt = lastBlock.map(_.blockScore()).getOrElse(0)
+    val score                 = block.blockScore() + prevlockScore
+    val result =
+      sql"insert into blocks values (${block.version.toInt}, ${block.timestamp}, ${block.reference.toString}, ${block.consensusData.baseTarget}, ${block.consensusData.generationSignature.toString}, ${Base58
+        .encode(block.signerData.generator.publicKey)}, 0, ${block.transactionData.size}, $height, ${block.featureVotes.toArray}, ${block
+        .bytes()}, ${score.longValue}, 0)".update.run.runSync
+  }
+
+  private def insertWavesBalance(addressId: Long, height: Int, balance: Long): Unit = {
+    sql"insert into current_waves_balance values ($addressId, $height, $balance)".update.run.runSync
+  }
+
+  private def insertLeaseBalance(addressId: Long, height: Int, in: Long, out: Long): Unit = {
+    sql"insert into lease_balance_at_height values ($addressId, $height, $in, $out)".update.run.runSync
+  }
+
+  private def insertNewAssets(addressId: Long, assetsId: Set[ByteStr]): Unit = {
+    for (assetId <- assetsId) {
+      sql"insert into addresses_assets values ($addressId, ${assetId.toString})".update.run.runSync
+    }
+  }
+
+  private def insertAssetBalance(addressId: Long, assetId: ByteStr, height: Int, balance: Long): Unit = {
+    sql"insert into current_asset_balance values ($addressId, $height, ${assetId.toString}, $balance)".update.run.runSync
+  }
+
+  private def insertVolumeAndFee(orderId: ByteStr, height: Int, volumeAndFee: VolumeAndFee): Unit = {
+    sql"insert into volume_and_fee_for_order_at_height values (${orderId.toString}, $height, ${volumeAndFee.volume}, ${volumeAndFee.fee})".update.run.runSync
+  }
+
+  private def insertAssetInfo(assetId: ByteStr, assetInfo: AssetInfo, height: Int): Unit = {
+    sql"insert into assets_info values (${assetId.toString}, ${assetInfo.isReissuable}, ${assetInfo.volume}, $height)".update.run.runSync
+  }
+
+  private def insertDataEntry(txId: ByteStr, addressId: Long, dataEntry: DataEntry[_]) = {}
+
+  private def insertDataHistory(addressId: Long, key: String, height: Int) = {
+    sql"insert into data_history values (${addressId.toString}, $key, $height)".update.run.runSync
+  }
+
+  override def append(diff: Diff, carryFee: Long, block: Block): Unit = {
+    val currentHeight = height
+    val newHeight     = currentHeight + 1
+
+    val allAddresses = diff.portfolios.keys ++ diff.transactions.values.flatMap(_._3.toIterable)
+    val newAddresses = {
+      if (allAddresses.isEmpty) {
+        Set.empty
+      } else {
+        val existingAddresses = getExistingAddresses(allAddresses)
+        allAddresses.filterNot(existingAddresses.contains)
+      }
+    }
+    val newInsertedAddress = insertAdresses(newAddresses)
+
+    def addressId(address: Address): Long =
+      newInsertedAddress.find(p => p._2 == address).map(_._1).getOrElse(throw new RuntimeException("Id wasn't found"))
+
+    val wavesBalances = Map.newBuilder[Long, Long]
+    val assetBalances = Map.newBuilder[Long, Map[ByteStr, Long]]
+    val leaseBalances = Map.newBuilder[Long, LeaseBalance]
+    val newPortfolios = Map.newBuilder[Address, Portfolio]
+
+    for ((address, portfolioDiff: Portfolio) <- diff.portfolios) {
+      val newPortfolio = portfolio(address).combine(portfolioDiff)
+      if (portfolioDiff.balance != 0) {
+        wavesBalances += addressId(address) -> newPortfolio.balance
+      }
+
+      if (portfolioDiff.lease != LeaseBalance.empty) {
+        leaseBalances += addressId(address) -> newPortfolio.lease
+      }
+
+      if (portfolioDiff.assets.nonEmpty) {
+        val newAssetBalances = for { (k, v) <- portfolioDiff.assets if v != 0 } yield k -> newPortfolio.assets(k)
+        if (newAssetBalances.nonEmpty) {
+          assetBalances += addressId(address) -> newAssetBalances
+        }
+      }
+
+      newPortfolios += address -> newPortfolio
+    }
+
+    val newFills = for {
+      (orderId, fillInfo) <- diff.orderFills
+    } yield orderId -> getVolumeAndFeeForOrderAtHeight(orderId).getOrElse(VolumeAndFee.empty).combine(fillInfo)
+
+    insertBlock(block, newHeight, carryFee)
+
+    // TODO: insert transactions
+    //    val newTransactions = Map.newBuilder[ByteStr, (Transaction, Set[Long])]
+    //    for ((id, (_, tx, addresses)) <- diff.transactions) {
+    //      newTransactions += id -> ((tx, addresses.map(addressId)))
+    //    }
+
+    for ((addressId, balance) <- wavesBalances.result()) {
+      insertWavesBalance(addressId, newHeight, balance)
+    }
+
+    for ((addressId, leaseBalance: LeaseBalance) <- leaseBalances.result()) {
+      insertLeaseBalance(addressId, newHeight, leaseBalance.in, leaseBalance.out)
+    }
+
+    val newAddressesForAsset = mutable.AnyRefMap.empty[ByteStr, Set[BigInt]]
+    for ((addressId, assets) <- assetBalances.result()) {
+      val prevAssets = getExistingAssets(addressId).toSet
+      val newAssets  = assets.keySet.diff(prevAssets)
+      for (assetId <- newAssets) {
+        newAddressesForAsset += assetId -> (newAddressesForAsset.getOrElse(assetId, Set.empty) + addressId)
+      }
+      insertNewAssets(addressId, newAssets)
+      for ((assetId, balance) <- assets) {
+        insertAssetBalance(addressId, assetId, newHeight, balance)
+      }
+    }
+
+    for ((orderId, volumeAndFee) <- newFills) {
+      insertVolumeAndFee(orderId, newHeight, volumeAndFee)
+    }
+
+    for ((assetId, assetInfo) <- diff.issuedAssets) {
+      val combinedAssetInfo = getLastAssetInfo(assetId).fold(assetInfo) { p =>
+        Monoid.combine(p, assetInfo)
+      }
+      insertAssetInfo(assetId, combinedAssetInfo, newHeight)
+    }
+
+    for ((address, addressData) <- diff.accountData) {
+      for ((key, value) <- addressData.data) {
+        insertDataHistory(addressId(address), key, newHeight)
+      }
+    }
+  }
+
+  override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = ???
 }
 
 object DoobieGetInstances {
@@ -354,6 +535,8 @@ object DoobieGetInstances {
 
   implicit val intArray: Meta[Seq[Int]] =
     Meta[Array[Int]].imap(_.toSeq)(seq => Array.apply(seq: _*))
+
+  implicit val shortArray: Meta[Array[Short]] = Meta[Array[Short]]
 
   implicit val scriptMeta: Meta[Script] =
     Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)
