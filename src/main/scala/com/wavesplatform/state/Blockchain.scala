@@ -8,11 +8,14 @@ import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction._
+import com.wavesplatform.transaction.assets.exchange.{ExchangeTransactionV2, Order}
 import com.wavesplatform.transaction.assets.{IssueTransaction, IssueTransactionV1, IssueTransactionV2}
 import com.wavesplatform.transaction.transfer.{TransferTransaction, TransferTransactionV1, TransferTransactionV2}
 import doobie.Get
+import doobie.util.Meta
 import monix.eval.Task
 import monix.execution.Scheduler
+import org.postgresql.util.PGobject
 import scorex.crypto.encode.Base58
 import scorex.crypto.signatures.PublicKey
 
@@ -184,6 +187,10 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     } yield q).runSync
   }
 
+//  def exTx = {
+//    sql"".query[ExchangeTransactionV2]
+//  }
+
   def transferTx = {
     val v1 =
       sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
@@ -294,42 +301,36 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 object DoobieGetInstances {
   import doobie.postgres._, doobie.postgres.implicits._
 
-  implicit val bigIntGet: Get[BigInt] = {
-    Get[BigDecimal].map(_.toBigInt())
-  }
+  implicit val bigIntMeta: Meta[BigInt] =
+    Meta[BigDecimal].imap(_.toBigInt())(BigDecimal(_))
 
-  implicit val arrayByteGet: Get[Array[Byte]] = {
-    Get[String].map(s => Base58.decode(s).get)
-  }
+  implicit val arrayByteMeta: Meta[Array[Byte]] =
+    Meta[String].imap(s => Base58.decode(s).get)(Base58.encode)
 
-  implicit val byteStrGet: Get[ByteStr] = {
-    Get[String].map(s => ByteStr.decodeBase58(s).get)
-  }
+  implicit val byteStrMeta: Meta[ByteStr] =
+    Meta[String].imap(s => ByteStr.decodeBase58(s).get)(s => s.toString)
 
-  implicit val pkGet: Get[PublicKeyAccount] = {
-    Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
-  }
+  implicit val publickKeyAccountkMeta: Meta[PublicKeyAccount] =
+    Meta[String].imap(s => PublicKeyAccount.fromBase58String(s).right.get)(pka => Base58.encode(pka.publicKey))
 
-  implicit val addressGet: Get[Address] = {
-    Get[String].map(s => Address.fromString(s).right.get)
-  }
+  implicit val addressMeta: Meta[Address] =
+    Meta[String].imap(s => Address.fromString(s).right.get)(_.address)
 
-  implicit val proofsGet: Get[Proofs] =
-    Get[Array[String]].map { s =>
-      Proofs(s.map(x => ByteStr.decodeBase58(x).get))
-    }
+  implicit val proofsMeta: Meta[Proofs] =
+    Meta[Array[String]].imap(s => Proofs(s.map(x => ByteStr.decodeBase58(x).get)))(_.base58().toArray)
 
-  implicit val scriptGet: Get[Script] = {
-    Get[String].map { s =>
-      Script.fromBase64String(s).right.get
-    }
-  }
+  implicit val scriptMeta: Meta[Script] =
+    Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)
 
-  implicit val addressOrAlias: Get[AddressOrAlias] = {
-    Get[String].map { s =>
-      AddressOrAlias.fromString(s).right.get
-    }
-  }
+  implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
+    Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
+
+//  implicit val orderGet: Get[Order] = {
+//    Get[PGobject].map { json =>
+//      json
+//
+//    }
+//  }
 
 //  implicit val issueTransactionGet: Get[IssueTransaction]  = {
 //    Get[(Byte, )]
