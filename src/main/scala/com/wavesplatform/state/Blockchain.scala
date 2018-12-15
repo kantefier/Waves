@@ -335,7 +335,24 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
       .getOrElse(0L)
   }
 
-  override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
+  override def assetDistribution(assetId: AssetId): Map[Address, Long] = {
+    sql"""SELECT t3.address, t1.amount
+         |FROM asset_balances t1
+         |  INNER JOIN (
+         |    SELECT address_id, max(height) as maxheight
+         |    FROM asset_balances
+         |    WHERE asset_id = '$assetId'
+         |    GROUP BY address_id) t2
+         |      ON t1.address_id=t2.address_id AND t1.height=t2.maxheight
+         |  INNER JOIN addresses t3
+         |      ON t1.address_id=t3.id""".stripMargin
+      .query[(Address, Long)]
+      .stream
+      .compile
+      .toList
+      .map(_.toMap)
+      .runSync
+  }
 
   override def assetDistributionAtHeight(assetId: AssetId,
                                          height: Int,
