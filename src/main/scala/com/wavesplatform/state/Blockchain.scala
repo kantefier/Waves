@@ -315,14 +315,23 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def accountData(acc: Address, key: String): Option[DataEntry[_]] = ???
 
   override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = {
-    sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].unique.flatMap { addressId =>
-      mayBeAssetId match {
-        case Some(assetId) =>
-          sql"SELECT amount FROM assets_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM assets_balances WHERE address_id=$addressId)".query[Long].option
-        case None =>
-          sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)".query[Long].option
+    sql"SELECT id FROM addresses WHERE address='${address.toString}'"
+      .query[BigInt]
+      .unique
+      .flatMap { addressId =>
+        mayBeAssetId match {
+          case Some(assetId) =>
+            sql"SELECT amount FROM assets_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM assets_balances WHERE address_id=$addressId)"
+              .query[Long]
+              .option
+          case None =>
+            sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)"
+              .query[Long]
+              .option
+        }
       }
-    }.runSync.getOrElse(0L)
+      .runSync
+      .getOrElse(0L)
   }
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
@@ -332,7 +341,24 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
                                          count: Int,
                                          fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]] = ???
 
-  override def wavesDistribution(height: Int): Map[Address, Long] = ???
+  override def wavesDistribution(height: Int): Map[Address, Long] = {
+    sql"""SELECT t3.address, t1.amount
+         |FROM waves_balances t1
+         |  INNER JOIN (
+         |    SELECT address_id, max(height) as maxheight
+         |    FROM waves_balances
+         |    WHERE height <= $height
+         |    GROUP BY address_id) t2
+         |      ON t1.address_id=t2.address_id AND t1.height=t2.maxheight
+         |  INNER JOIN addresses t3
+         |      ON t1.address_id=t3.id""".stripMargin
+      .query[(Address, Long)]
+      .stream
+      .compile
+      .toList
+      .map(_.toMap)
+      .runSync
+  }
 
   override def allActiveLeases: Set[LeaseTransaction] = ???
 
