@@ -286,12 +286,23 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
-  override def transactionHeight(id: ByteStr): Option[Int] = ???
+  override def transactionHeight(id: ByteStr): Option[Int] = {
+    sql"SELECT height FROM transactions WHERE id = ${id.toString}"
+      .query[Int]
+      .option
+      .runSync
+  }
 
   override def addressTransactions(address: Address, types: Set[Type], count: Int, fromId: Option[AssetId]): Either[String, Seq[(Int, Transaction)]] =
     ???
 
-  override def containsTransaction(tx: Transaction): Boolean = ???
+  override def containsTransaction(tx: Transaction): Boolean = {
+    sql"SELECT id FROM transactions WHERE id = ${tx.id().toString}"
+      .query[String]
+      .option
+      .runSync
+      .isDefined
+  }
 
   override def assetDescription(id: AssetId): Option[AssetDescription] = ???
 
@@ -306,7 +317,9 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def leaseDetails(leaseId: ByteStr): Option[LeaseDetails] = ???
 
-  override def filledVolumeAndFee(orderId: ByteStr): VolumeAndFee = ???
+  override def filledVolumeAndFee(orderId: ByteStr): VolumeAndFee = {
+    getVolumeAndFeeForOrder(orderId).getOrElse(VolumeAndFee.empty)
+  }
 
   /** Retrieves Waves balance snapshot in the [from, to] range (inclusive) */
   override def balanceSnapshots(address: Address, from: Int, to: Int): Seq[BalanceSnapshot] = ???
@@ -411,7 +424,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .runSync
   }
 
-  private def getVolumeAndFeeForOrderAtHeight(orderId: ByteStr): Option[VolumeAndFee] = {
+  private def getVolumeAndFeeForOrder(orderId: ByteStr): Option[VolumeAndFee] = {
     sql"SELECT volume, fee FROM volume_and_fee_for_order_at_height WHERE order_id = ${orderId.toString} AND height = (SELECT MAX(height) FROM volume_and_fee_for_order_at_height t WHERE t.order_id = ${orderId.toString})"
       .query[(Long, Long)]
       .stream
@@ -534,7 +547,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
     val newFills = for {
       (orderId, fillInfo) <- diff.orderFills
-    } yield orderId -> getVolumeAndFeeForOrderAtHeight(orderId).getOrElse(VolumeAndFee.empty).combine(fillInfo)
+    } yield orderId -> getVolumeAndFeeForOrder(orderId).getOrElse(VolumeAndFee.empty).combine(fillInfo)
 
     insertBlock(block, newHeight, carryFee)
 
