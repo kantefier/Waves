@@ -14,7 +14,7 @@ import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
 import com.wavesplatform.transaction.transfer.{MassTransferTransaction, TransferTransaction, TransferTransactionV1, TransferTransactionV2}
 import doobie.Get
-import doobie.util.{Meta, Read}
+import doobie.util.{Meta, Read, Write}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.postgresql.util.PGobject
@@ -338,15 +338,25 @@ object DoobieGetInstances {
   implicit val addressOrAliasMeta: Meta[AddressOrAlias] =
     Meta[String].imap(s => AddressOrAlias.fromString(s).right.get)(_.stringRepr)
 
-  implicit val dataEntryRead: Read[DataEntry[_]] = {
-    Read[(String, String, Long, Boolean, String, String)].map {
-      case (dataKey, dataType, integer, boolean, binary, string) =>
-        dataType match {
-          case "integer" => IntegerDataEntry(dataKey, integer)
-          case "boolean" => BooleanDataEntry(dataKey, boolean)
-          case "binary"  => BinaryDataEntry(dataKey, ByteStr.decodeBase58(binary).get)
-          case "string"  => StringDataEntry(dataKey, string)
-        }
+  implicit val dataEntryRead: Read[DataEntry[_]] = Read[(String, String, Long, Boolean, String, String)].map {
+    case (dataKey, dataType, integer, boolean, binary, string) =>
+      dataType match {
+        case "integer" => IntegerDataEntry(dataKey, integer)
+        case "boolean" => BooleanDataEntry(dataKey, boolean)
+        case "binary"  => BinaryDataEntry(dataKey, ByteStr.decodeBase58(binary).get)
+        case "string"  => StringDataEntry(dataKey, string)
+      }
+  }
+
+  implicit val dataEntryWrite: Write[DataEntry[_]] = {
+    val nullString  = null.asInstanceOf[String]
+    val nullBoolean = null.asInstanceOf[Boolean]
+    val nullLong    = null.asInstanceOf[Long]
+    Write[(String, String, Long, Boolean, String, String)].contramap {
+      case IntegerDataEntry(key, integer) => (key, "integer", integer, nullBoolean, nullString, nullString)
+      case BooleanDataEntry(key, boolean) => (key, "boolean", nullLong, boolean, nullString, nullString)
+      case BinaryDataEntry(key, binary)   => (key, "binary", nullLong, nullBoolean, binary.toString, nullString)
+      case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
 
