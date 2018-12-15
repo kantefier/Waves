@@ -3,6 +3,7 @@ package com.wavesplatform.state
 import cats.data.{NonEmptyList, OptionT}
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.AliasDoesNotExist
@@ -100,7 +101,7 @@ trait Blockchain {
   def rollbackTo(targetBlockId: ByteStr): Either[String, Seq[Block]]
 }
 
-class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
+class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
   val chainId = com.wavesplatform.account.AddressScheme.current.chainId
 
@@ -254,11 +255,32 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   }*/
 
   /** Features related */
-  override def approvedFeatures: Map[Short, Int] = ???
+  override def approvedFeatures: Map[Short, Int] = {
+    sql"SELECT id, height FROM approved_features"
+      .query[(Short, Int)]
+      .stream
+      .compile
+      .toList
+      .runSync
+      .toMap
+  }
 
-  override def activatedFeatures: Map[Short, Int] = ???
+  override def activatedFeatures: Map[Short, Int] = {
+    sql"SELECT id, height FROM activated_features"
+      .query[(Short, Int)]
+      .stream
+      .compile
+      .toList
+      .runSync
+      .toMap ++ fs.preActivatedFeatures
+  }
 
-  override def featureVotes(height: Int): Map[Short, Int] = ???
+  override def featureVotes(height: Int): Map[Short, Int] = {
+    fs.activationWindow(height)
+      .flatMap(h => blockHeaderAndSize(height).fold(Seq.empty[Short])(_._1.featureVotes.toSeq))
+      .groupBy(identity)
+      .mapValues(_.size)
+  }
 
   override def portfolio(a: Address): Portfolio = ???
 
@@ -455,6 +477,18 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     sql"insert into data_history values (${addressId.toString}, $key, $height)".update.run.runSync
   }
 
+  private def insertApprovedFeatures(approvedFeatures: Map[Short, Int]): Unit = {
+    for ((feature, height) <- approvedFeatures) {
+      sql"insert into approved_features values ($feature, $height)".update.run.runSync
+    }
+  }
+
+  private def insertActivatedFeatures(activatedFeatures: Map[Short, Int]): Unit = {
+    for ((feature, height) <- activatedFeatures) {
+      sql"insert into activated_features values ($feature, $height)".update.run.runSync
+    }
+  }
+
   override def append(diff: Diff, carryFee: Long, block: Block): Unit = {
     val currentHeight = height
     val newHeight     = currentHeight + 1
@@ -545,6 +579,20 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     for ((address, addressData) <- diff.accountData) {
       for ((key, value) <- addressData.data) {
         insertDataHistory(addressId(address), key, newHeight)
+      }
+    }
+
+    val activationWindowSize = fs.activationWindowSize(newHeight)
+    if (newHeight % activationWindowSize == 0) {
+      val minVotes = fs.blocksForFeatureActivation(newHeight)
+      val newlyApprovedFeatures = featureVotes(newHeight).collect {
+        case (featureId, voteCount) if voteCount + (if (block.featureVotes(featureId)) 1 else 0) >= minVotes => featureId -> newHeight
+      }
+
+      if (newlyApprovedFeatures.nonEmpty) {
+        insertApprovedFeatures(newlyApprovedFeatures)
+        val featuresToSave = newlyApprovedFeatures.mapValues(_ + activationWindowSize)
+        insertActivatedFeatures(featuresToSave)
       }
     }
   }
