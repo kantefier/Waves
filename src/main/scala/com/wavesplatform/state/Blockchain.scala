@@ -94,7 +94,7 @@ trait Blockchain {
 
 class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
-  val chainId = com.wavesplatform.account.AddressScheme.current
+  val chainId = com.wavesplatform.account.AddressScheme.current.chainId
 
   import doobie._
   import cats._
@@ -163,12 +163,24 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
       .runSync
   }
 
-  def issueTx = {
-    val v1 =
+  def issueTx: IssueTransaction = {
+    val v1: Query0[IssueTransaction] =
       sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
         .query[IssueTransactionV1]
-    sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
-      .query[IssueTransactionV2]
+        .map(t => t.asInstanceOf[IssueTransaction])
+    val v2: Query0[IssueTransaction] =
+      sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
+        .query[IssueTransactionV2]
+        .map(t => t.asInstanceOf[IssueTransaction])
+
+    def chooseV(v: Byte): Query0[IssueTransaction] = {
+      if (v == 1) v1 else v2
+    }
+
+    (for {
+      v <- sql"tx_version FROM issue_transaction".query[Byte].unique
+      q <- chooseV(v).unique
+    } yield q).runSync
 
   }
 
