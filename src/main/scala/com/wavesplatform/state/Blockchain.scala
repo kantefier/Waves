@@ -111,19 +111,24 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     *
     */
   private implicit class BlockingQuery[T](conn: ConnectionIO[T]) {
-    def runBlocking: T = conn.transact(xa).runSyncUnsafe(timeout)
+    def runSync: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
-  override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runBlocking
+  override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runSync
 
   override def score: BigInt = {
     for {
       h      <- sql"SELECT max(height) FROM blocks".query[Int].unique
       target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE height = $h".query[BigDecimal].unique
     } yield ((BigInt("18446744073709551616") / target.toBigInt()))
-  }.runBlocking
+  }.runSync
 
-  override def scoreOf(blockId: AssetId): Option[BigInt] = ???
+  override def scoreOf(blockId: AssetId): Option[BigInt] = {
+    for {
+      target     <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
+    } yield (target.map( t => (BigInt("18446744073709551616") / t.toBigInt())))
+  }.runSync
+
 
   override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = ???
 
