@@ -333,8 +333,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     } yield scriptOpt
   }.runSync
 
-  override def hasScript(address: Address): Boolean =
-    accountScript(address).isDefined
+  override def hasScript(address: Address): Boolean = accountScript(address).isDefined
 
   override def assetScript(id: AssetId): Option[Script] = {
     for {
@@ -343,12 +342,43 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     } yield scriptOpt
   }.runSync
 
-  override def hasAssetScript(id: AssetId): Boolean =
-    assetScript(id).isDefined
+  override def hasAssetScript(id: AssetId): Boolean = assetScript(id).isDefined
 
-  override def accountData(acc: Address): AccountDataInfo = ???
+  override def accountData(acc: Address): AccountDataInfo = {
+    val addressId = sql"SELECT id FROM addresses WHERE address = ${acc.stringRepr}"
+      .query[Long]
+      .option
+      .runSync
+      .getOrElse(throw new RuntimeException("Address not found"))
 
-  override def accountData(acc: Address, key: String): Option[DataEntry[_]] = ???
+    sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
+         | FROM data_transactions_data AS dtd,
+         | (SELECT dh.key AS key, MAX(dh.height) AS max_height FROM data_history AS dh WHERE dh.address_id = $addressId GROUP BY dh.key) as t
+         | WHERE dtd.data_key = t.key AND dtd.height = t.max_height""".stripMargin
+      .query[DataEntry[_]]
+      .stream
+      .compile
+      .toList
+      .map(list => list.map(de => de.key -> de).toMap)
+      .map(AccountDataInfo(_))
+      .runSync
+  }
+
+  override def accountData(acc: Address, key: String): Option[DataEntry[_]] = {
+    val addressId = sql"SELECT id FROM addresses WHERE address = ${acc.stringRepr}"
+      .query[Long]
+      .option
+      .runSync
+      .getOrElse(throw new RuntimeException("Address not found"))
+
+    sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
+         | FROM data_transactions_data AS dtd,
+         | (SELECT dh.key AS key, MAX(dh.height) AS max_height FROM data_history AS dh WHERE dh.address_id = $addressId AND dh.key = $key GROUP BY dh.key) as t
+         | WHERE dtd.data_key = t.key AND dtd.height = t.max_height""".stripMargin
+      .query[DataEntry[_]]
+      .option
+      .runSync
+  }
 
   override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = {
     sql"SELECT id FROM addresses WHERE address='${address.toString}'"
@@ -608,6 +638,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
     for ((address, addressData) <- diff.accountData) {
       for ((key, value) <- addressData.data) {
+        // TODO: insertDataEntry
         insertDataHistory(addressId(address), key, newHeight)
       }
     }

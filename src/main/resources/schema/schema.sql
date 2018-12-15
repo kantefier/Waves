@@ -209,6 +209,7 @@ CREATE TABLE public.data_transactions
 CREATE TABLE public.data_transactions_data
 (
   tx_id              text     NOT NULL REFERENCES public.data_transactions (id),
+  height             integer  NOT NULL REFERENCES "public"."blocks" ("height"),
   data_key           text     NOT NULL,
   data_type          text     NOT NULL,
   data_value_integer bigint,
