@@ -452,19 +452,4 @@ object DoobieGetInstances {
       case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
-//  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
-//    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
-//  }
-
-//  implicit val orderGet: Get[Order] = {
-//    Get[PGobject].map { json =>
-//      json
-
-//    }
-//  }
-
-//  implicit val issueTransactionGet: Get[IssueTransaction]  = {
-//    Get[(Byte, )]
-//  }
-
 }
