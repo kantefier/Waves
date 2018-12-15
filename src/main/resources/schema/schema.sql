@@ -398,15 +398,15 @@ CREATE TABLE public.asset_scripts_at_height
 -- Approved features
 CREATE TABLE public.approved_features
 (
-  id     INTEGER NOT NULL PRIMARY KEY,
-  height integer NOT NULL REFERENCES "public"."blocks" ("height")
+  id     SMALLINT NOT NULL PRIMARY KEY,
+  height integer  NOT NULL REFERENCES "public"."blocks" ("height")
 );
 
 -- Activated features
 CREATE TABLE public.activated_features
 (
-  id     INTEGER NOT NULL PRIMARY KEY,
-  height integer NOT NULL REFERENCES "public"."blocks" ("height")
+  id     SMALLINT NOT NULL PRIMARY KEY,
+  height integer  NOT NULL REFERENCES "public"."blocks" ("height")
 );
 
 -- Data history
