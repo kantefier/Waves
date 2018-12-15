@@ -3,6 +3,7 @@ package com.wavesplatform.state
 import com.wavesplatform.account.{Address, Alias}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
+import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction.{AssetId, Transaction, ValidationError}
@@ -86,7 +87,7 @@ trait Blockchain {
   def rollbackTo(targetBlockId: ByteStr): Either[String, Seq[Block]]
 }
 
-class SqlDb(implicit scheduler: Scheduler) {
+class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
 
   import doobie._
@@ -115,5 +116,88 @@ class SqlDb(implicit scheduler: Scheduler) {
     def runBlocking: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
+  override def height: Int = ???
 
+  override def score: BigInt = ???
+
+  override def scoreOf(blockId: AssetId): Option[BigInt] = ???
+
+  override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = ???
+
+  override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
+
+  override def lastBlock: Option[Block] = ???
+
+  override def carryFee: Long = ???
+
+  override def blockBytes(height: Int): Option[Array[Byte]] = ???
+
+  override def blockBytes(blockId: AssetId): Option[Array[Byte]] = ???
+
+  override def heightOf(blockId: AssetId): Option[Int] = ???
+
+  /** Returns the most recent block IDs, starting from the most recent  one */
+  override def lastBlockIds(howMany: Int): Seq[AssetId] = ???
+
+  /** Returns a chain of blocks starting with the block with the given ID (from oldest to newest) */
+  override def blockIdsAfter(parentSignature: AssetId, howMany: Int): Option[Seq[AssetId]] = ???
+
+  override def parent(block: Block, back: Int): Option[Block] = ???
+
+  /** Features related */
+  override def approvedFeatures: Map[Short, Int] = ???
+
+  override def activatedFeatures: Map[Short, Int] = ???
+
+  override def featureVotes(height: Int): Map[Short, Int] = ???
+
+  override def portfolio(a: Address): Portfolio = ???
+
+  override def transactionInfo(id: AssetId): Option[(Int, Transaction)] = ???
+
+  override def transactionHeight(id: AssetId): Option[Int] = ???
+
+  override def addressTransactions(address: Address, types: Set[Type], count: Int, fromId: Option[AssetId]): Either[String, Seq[(Int, Transaction)]] = ???
+
+  override def containsTransaction(tx: Transaction): Boolean = ???
+
+  override def assetDescription(id: AssetId): Option[AssetDescription] = ???
+
+  override def resolveAlias(a: Alias): Either[ValidationError, Address] = ???
+
+  override def leaseDetails(leaseId: AssetId): Option[LeaseDetails] = ???
+
+  override def filledVolumeAndFee(orderId: AssetId): VolumeAndFee = ???
+
+  /** Retrieves Waves balance snapshot in the [from, to] range (inclusive) */
+  override def balanceSnapshots(address: Address, from: Int, to: Int): Seq[BalanceSnapshot] = ???
+
+  override def accountScript(address: Address): Option[Script] = ???
+
+  override def hasScript(address: Address): Boolean = ???
+
+  override def assetScript(id: AssetId): Option[Script] = ???
+
+  override def hasAssetScript(id: AssetId): Boolean = ???
+
+  override def accountData(acc: Address): AccountDataInfo = ???
+
+  override def accountData(acc: Address, key: String): Option[DataEntry[_]] = ???
+
+  override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = ???
+
+  override def assetDistribution(assetId: AssetId): Map[Address, Long] = ???
+
+  override def assetDistributionAtHeight(assetId: AssetId, height: Int, count: Int, fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]] = ???
+
+  override def wavesDistribution(height: Int): Map[Address, Long] = ???
+
+  override def allActiveLeases: Set[LeaseTransaction] = ???
+
+  /** Builds a new portfolio map by applying a partial function to all portfolios on which the function is defined.
+    *
+    * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
+  override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
+override def append(diff: Diff, carryFee: Long, block: Block): Unit = ???
+override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = ???
 }
