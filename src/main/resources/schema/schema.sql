@@ -66,6 +66,7 @@ CREATE TABLE public.issue_transactions
   quantity          bigint            NOT NULL,
   decimals          smallint          NOT NULL,
   reissuable        boolean           NOT NULL,
+  script            character varying,
   PRIMARY KEY (id),
   FOREIGN KEY ("height") REFERENCES "public"."blocks" ("height")
 )
@@ -405,6 +406,14 @@ CREATE TABLE public.approved_features
   id     INTEGER NOT NULL PRIMARY KEY,
   height integer NOT NULL REFERENCES "public"."blocks" ("height")
 );
+
+-- Activated features
+CREATE TABLE public.activated_features
+(
+  id     INTEGER NOT NULL PRIMARY KEY,
+  height integer NOT NULL REFERENCES "public"."blocks" ("height")
+);
+
 
 
 
