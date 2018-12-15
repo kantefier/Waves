@@ -253,6 +253,7 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 }
 
 object DoobieGetInstances {
+  import doobie.postgres._, doobie.postgres.implicits._
 
   implicit val bigIntGet: Get[BigInt] = {
     Get[BigDecimal].map(_.toBigInt())
@@ -274,6 +275,12 @@ object DoobieGetInstances {
     Get[String].map(s => Address.fromString(s).right.get)
   }
 
+  implicit val proofsGet = {
+    Get[Array[String]].map { s =>
+      Proofs(s.map(x => ByteStr.decodeBase58(x).get))
+    }
+
+  }
 //  implicit val issueTransactionGet: Get[IssueTransaction]  = {
 //    Get[(Byte, )]
 //  }
