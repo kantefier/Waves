@@ -1,5 +1,6 @@
 package com.wavesplatform.state
 
+import cats.data.OptionT
 import com.wavesplatform.account.{Address, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
 import com.wavesplatform.state.reader.LeaseDetails
@@ -118,6 +119,8 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     def runSync: T = conn.transact(xa).runSyncUnsafe(timeout)
   }
 
+  import DoobieGetInstances._
+
   override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runSync
 
   override def score: BigInt = {
@@ -129,9 +132,12 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def scoreOf(blockId: AssetId): Option[BigInt] = {
     for {
-      target <- sql"SELECT nxt_consensus_base_target FROM blocks WHERE signature = ${blockId.toString} ".query[BigDecimal].option
-    } yield (target.map(t => BigInt("18446744073709551616") / t.toBigInt()))
-  }.runSync
+      refAndHeightScore <- OptionT.apply(
+        sql"SELECT reference, height_score FROM blocks WHERE signature = '${blockId.toString}'".query[(ByteStr, BigInt)].option)
+      (reference, heightScore) = refAndHeightScore
+      previousHeightScore <- OptionT.apply(sql"SELECT height_score FROM blocks WHERE signature = '${reference.toString}'".query[BigInt].option)
+    } yield heightScore - previousHeightScore
+  }.value.runSync
 
   override def blockHeaderAndSize(height: Int): Option[(BlockHeader, Int)] = {
     for {
@@ -140,8 +146,6 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
     ???
   }
-
-  import DoobieGetInstances._
 
   def paymentTx = {
 
