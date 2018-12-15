@@ -314,6 +314,31 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
   override def append(diff: Diff, carryFee: Long, block: Block): Unit                                  = ???
   override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]]                          = ???
+
+  val txTypeIdToTable = Map(
+    PaymentTransaction.typeId        -> "payment_transactions",
+    IssueTransaction.typeId          -> "issue_transactions",
+    TransferTransaction.typeId       -> "transfer_transactions",
+    ReissueTransaction.typeId        -> "reissue_transactions",
+    BurnTransaction.typeId           -> "burn_transactions",
+    ExchangeTransaction.typeId       -> "exchange_transactions",
+    LeaseTransaction.typeId          -> "lease_transactions",
+    LeaseCancelTransaction.typeId    -> "lease_cancel_transactions",
+    CreateAliasTransaction.typeId    -> "create_alias_transactions",
+    MassTransferTransaction.typeId   -> "mass_transfer_transactions",
+    DataTransaction.typeId           -> "data_transactions",
+    SetScriptTransaction.typeId      -> "set_script_transactions",
+    SponsorFeeTransaction.typeId     -> "sponsor_fee_transactions",
+    SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
+  )
+
+  def txOnHeight(height: Int) = {
+    fr"WHERE height = $height"
+  }
+
+  def txWithId(id: ByteStr) = {
+    fr"WHERE id = '${id.base58}'"
+  }
 }
 
 object DoobieGetInstances {
@@ -367,42 +392,5 @@ object DoobieGetInstances {
       case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
     }
   }
-
-
-  def queryForTx = {
-
-  }
-
-  val txTypeIdToTable = Map(
-    PaymentTransaction.typeId -> "payment_transactions",
-    IssueTransaction.typeId -> "issue_transactions",
-    TransferTransaction.typeId -> "transfer_transactions",
-    ReissueTransaction.typeId ->"reissue_transactions",
-    BurnTransaction.typeId -> "burn_transactions",
-    ExchangeTransaction.typeId -> "exchange_transactions",
-    LeaseTransaction.typeId -> "lease_transactions",
-    LeaseCancelTransaction.typeId -> "lease_cancel_transactions",
-    CreateAliasTransaction.typeId -> "create_alias_transactions",
-    MassTransferTransaction.typeId -> "mass_transfer_transactions",
-    DataTransaction.typeId -> "data_transactions",
-    SetScriptTransaction.typeId -> "set_script_transactions",
-    SponsorFeeTransaction.typeId -> "sponsor_fee_transactions",
-    SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
-  )
-
-//  implicit val integerDataEntryMeta: Meta[IntegerDataEntry] = {
-//    Meta[BigInt].imap(i => IntegerDataEntry(i.toLong))
-//  }
-
-//  implicit val orderGet: Get[Order] = {
-//    Get[PGobject].map { json =>
-//      json
-
-//    }
-//  }
-
-//  implicit val issueTransactionGet: Get[IssueTransaction]  = {
-//    Get[(Byte, )]
-//  }
 
 }
