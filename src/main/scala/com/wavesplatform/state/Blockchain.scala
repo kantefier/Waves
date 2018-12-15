@@ -180,11 +180,14 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 
   override def carryFee: Long = ???
 
-  override def blockBytes(height: Int): Option[Array[Byte]] = ???
+  override def blockBytes(height: Int): Option[Array[Byte]] =
+    sql"SELECT block_bytes from blocks WHERE height = $height".query[Array[Byte]].option.runSync
 
-  override def blockBytes(blockId: AssetId): Option[Array[Byte]] = ???
+  override def blockBytes(blockId: ByteStr): Option[Array[Byte]] =
+    sql"SELECT block_bytes from blocks WHERE signature = ${blockId.toString}".query[Array[Byte]].option.runSync
 
-  override def heightOf(blockId: AssetId): Option[Int] = ???
+  override def heightOf(blockId: ByteStr): Option[Int] =
+    sql"SELECT height from blocks WHERE signature = '${blockId.toString}'".query[Int].option.runSync
 
   /** Returns the most recent block IDs, starting from the most recent  one */
   override def lastBlockIds(howMany: Int): Seq[AssetId] = ???
