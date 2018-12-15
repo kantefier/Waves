@@ -190,10 +190,11 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     sql"SELECT height from blocks WHERE signature = '${blockId.toString}'".query[Int].option.runSync
 
   /** Returns the most recent block IDs, starting from the most recent  one */
-  override def lastBlockIds(howMany: Int): Seq[AssetId] = ???
+  override def lastBlockIds(howMany: Int): Seq[ByteStr] =
+    sql"SELECT signature from blocks ORDER BY height DESC".query[ByteStr].stream.take(howMany).compile.toList.runSync.toSeq
 
   /** Returns a chain of blocks starting with the block with the given ID (from oldest to newest) */
-  override def blockIdsAfter(parentSignature: AssetId, howMany: Int): Option[Seq[AssetId]] = ???
+  override def blockIdsAfter(parentSignature: AssetId, howMany: Int): Option[Seq[ByteStr]] = ???
 
   override def parent(block: Block, back: Int): Option[Block] = ??? /* {
     for {
