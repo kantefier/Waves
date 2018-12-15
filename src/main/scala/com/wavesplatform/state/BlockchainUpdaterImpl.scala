@@ -19,6 +19,7 @@ import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.utils.{ScorexLogging, Time, UnsupportedFeature, forceStopApplication}
 import kamon.Kamon
 import kamon.metric.MeasurementUnit
+import monix.eval.Task
 import monix.reactive.Observable
 import monix.reactive.subjects.ConcurrentSubject
 
@@ -34,7 +35,7 @@ class BlockchainUpdaterImpl(blockchain: Blockchain, settings: WavesSettings, tim
   private lazy val maxBlockReadinessAge = settings.minerSettings.intervalAfterLastBlockThenGenerationIsAllowed.toMillis
 
   private var ngState: Option[NgState]              = Option.empty
-  private var restTotalConstraint: MiningConstraint = MiningConstraints(blockchain, blockchain.height).total
+  private var restTotalConstraint: Task[MiningConstraint] = blockchain.height.map(MiningConstraints(blockchain, _).total)
 
   private val service               = monix.execution.Scheduler.singleThread("last-block-info-publisher")
   private val internalLastBlockInfo = ConcurrentSubject.publish[LastBlockInfo](service)
@@ -58,7 +59,14 @@ class BlockchainUpdaterImpl(blockchain: Blockchain, settings: WavesSettings, tim
     s"FEATURE${if (s.size > 1) "S" else ""} ${s.mkString(", ")} ${if (s.size > 1) "have been" else "has been"}"
 
   private def featuresApprovedWithBlock(block: Block): Set[Short] = {
-    val height = blockchain.height + 1
+
+    for {
+      height <- blockchain.height.map(_ + 1)
+      featuresCheckPeriod        = functionalitySettings.activationWindowSize(height)
+      blocksForFeatureActivation = functionalitySettings.blocksForFeatureActivation(height)
+    }
+
+    val height = blockchain.height.map(_ + 1)
 
     val featuresCheckPeriod        = functionalitySettings.activationWindowSize(height)
     val blocksForFeatureActivation = functionalitySettings.blocksForFeatureActivation(height)
