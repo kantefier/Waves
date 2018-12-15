@@ -6,7 +6,7 @@ import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.{AssetId, PaymentTransaction, Transaction, ValidationError}
+import com.wavesplatform.transaction._
 import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -139,11 +139,27 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     ???
   }
 
+  import DoobieGetInstances._
+
   def paymentTx = {
-    import DoobieGetInstances._
+
 
     sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions"
       .query[PaymentTransaction]
+      .unique
+      .runSync
+  }
+
+  def genesisTx = {
+    sql"SELECT address, amount, time_stamp AS timestamp, signature FROM genesis_transactions"
+      .query[GenesisTransaction]
+      .unique
+      .runSync
+  }
+
+  def issueTx = {
+    sql"SELECT address, amount, time_stamp AS timestamp, signature FROM genesis_transactions"
+      .query[IssueTransaction]
       .unique
       .runSync
   }
@@ -231,6 +247,16 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
 }
 
 object DoobieGetInstances {
+
+
+  implicit val bigIntGet: Get[BigInt] = {
+    Get[BigDecimal].map(_.toBigInt())
+  }
+
+  implicit val byteStrGet: Get[ByteStr] = {
+    Get[String].map(s => ByteStr.decodeBase58(s).get)
+  }
+
   implicit val pkGet: Get[PublicKeyAccount] = {
     Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
   }
@@ -239,8 +265,5 @@ object DoobieGetInstances {
     Get[String].map(s => Address.fromString(s).right.get)
   }
 
-  implicit val byteStrGet: Get[ByteStr] = {
-    Get[String].map(s => ByteStr.decodeBase58(s).get)
-  }
 
 }
