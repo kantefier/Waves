@@ -7,6 +7,7 @@ import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
 import com.wavesplatform.transaction.{AssetId, PaymentTransaction, Transaction, ValidationError}
+import doobie.Get
 import monix.eval.Task
 import monix.execution.Scheduler
 import scorex.crypto.signatures.PublicKey
@@ -134,23 +135,17 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
     for {
       h <- sql"SELECT max(height) FROM blocks".query[Int].unique
     } yield ()
+
+    ???
   }
 
   def paymentTx = {
-    implicit val pkGet: Get[PublicKeyAccount] = {
-      Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
-    }
+    import DoobieGetInstances._
 
-    implicit val addressGet: Get[Address] = {
-      Get[String].map(s => Address.fromString(s).right.get)
-    }
-
-    implicit val byteStrGet: Get[ByteStr] = {
-      Get[String].map(s => ByteStr.decodeBase58(s).get)
-    }
-
-    implicit val get: Get[PaymentTransaction] = {}
-    sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions".query[PaymentTransaction]
+    sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions"
+      .query[PaymentTransaction]
+      .unique
+      .runSync
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -233,4 +228,19 @@ class SqlDb(implicit scheduler: Scheduler) extends Blockchain {
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
   override def append(diff: Diff, carryFee: Long, block: Block): Unit                                  = ???
   override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]]                          = ???
+}
+
+object DoobieGetInstances {
+  implicit val pkGet: Get[PublicKeyAccount] = {
+    Get[String].map(s => PublicKeyAccount.fromBase58String(s).right.get)
+  }
+
+  implicit val addressGet: Get[Address] = {
+    Get[String].map(s => Address.fromString(s).right.get)
+  }
+
+  implicit val byteStrGet: Get[ByteStr] = {
+    Get[String].map(s => ByteStr.decodeBase58(s).get)
+  }
+
 }
