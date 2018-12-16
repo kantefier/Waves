@@ -329,7 +329,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
-  override def lastBlock: Option[Block] = ???
+  override def lastBlock: Option[Block] = None
 
   override def carryFee: Long = {
     for {
@@ -649,13 +649,20 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     result.toMap.mapValues(Address.fromString(_).right.get)
   }
 
-  private def insertBlock(block: Block, height: Int, carryFee: Long): Unit = {
+  def insertBlock(block: Block, height: Int, carryFee: Long): Unit = {
     val prevlockScore: BigInt = lastBlock.map(_.blockScore()).getOrElse(0)
-    val score                 = block.blockScore() + prevlockScore
-    val result =
-      sql"insert into blocks values (${block.version.toInt}, ${block.timestamp}, '${block.reference.toString}', ${block.consensusData.baseTarget}, '${block.consensusData.generationSignature.toString}', '${Base58
-        .encode(block.signerData.generator.publicKey)}', 0, ${block.transactionData.size}, $height, ${block.featureVotes.toArray}, ${block
-        .bytes()}, ${score.longValue}, 0)".update.run.runSync
+    val reference             = Option(block.reference).map(_.toString).orNull
+    val version               = block.version.toShort
+    val timestamp             = block.timestamp
+    val baseTarget            = block.consensusData.baseTarget
+    val genSign               = block.consensusData.generationSignature.toString
+    val generator             = Base58.encode(block.signerData.generator.publicKey)
+    val blockSign             = block.uniqueId.toString
+    val size                  = block.transactionData.size
+    val features              = block.featureVotes.mkString(",")
+    val score                 = (block.blockScore() + prevlockScore).toString()
+    val bytes                 = Base58.encode(block.bytes())
+    sql"insert into blocks values ($version, $timestamp, $reference, $baseTarget, $genSign, $generator, $blockSign, 0, $size, $height, $features, $bytes, $score, $carryFee)".update.run.runSync
   }
 
   private def insertWavesBalance(addressId: Long, height: Int, balance: Long): Unit = {

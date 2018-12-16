@@ -1,20 +1,20 @@
 -- table for blocks
 CREATE TABLE public.blocks
 (
-  schema_version                     smallint                    NOT NULL,
-  time_stamp                         timestamp without time zone NOT NULL,
-  reference                          character varying           NOT NULL,
-  nxt_consensus_base_target          bigint                      NOT NULL,
-  nxt_consensus_generation_signature character varying           NOT NULL,
-  generator                          character varying           NOT NULL,
-  signature                          character varying           NOT NULL,
-  fee                                bigint                      NOT NULL,
+  schema_version                     smallint          NOT NULL,
+  time_stamp                         bigint            NOT NULL,
+  reference                          character varying NOT NULL,
+  nxt_consensus_base_target          bigint            NOT NULL,
+  nxt_consensus_generation_signature character varying NOT NULL,
+  generator                          character varying NOT NULL,
+  signature                          character varying NOT NULL,
+  fee                                bigint            NOT NULL,
   blocksize                          integer,
-  height                             integer                     NOT NULL PRIMARY KEY,
-  features                           smallint[],
-  block_bytes                        bytea                       NOT NULL,
-  height_score                       bigint                      NOT NULL,
-  carry_fee                          bigint                      NOT NULL
+  height                             integer           NOT NULL PRIMARY KEY,
+  features                           character varying,
+  block_bytes                        text              NOT NULL,
+  height_score                       character varying NOT NULL,
+  carry_fee                          bigint            NOT NULL
 );
 
 -- common table for all transactions
