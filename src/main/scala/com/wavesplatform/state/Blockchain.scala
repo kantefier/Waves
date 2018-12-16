@@ -381,14 +381,24 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     Option(blockIds).filter(_.nonEmpty)
   }
 
-  override def parent(block: Block, back: Int): Option[Block] = ??? /* {
-    for {
+  override def parent(block: Block, back: Int): Option[Block] = {
+    /*for {
       parentHeight <- OptionT(sql"SELECT height from blocks WHERE signature = '${block.reference.toString}'".query[Int].option)
       targetHeight = parentHeight - back + 1
-      resultBlock <- blockAt(targetHeight)
-    } ???
+//      resultBlock <- blockAt(targetHeight)
+    } yield ???
+
+    type lamb[A] = ConnectionIO[Option[A]]
+
+    for {
+      givenHeight <- OptionT(sql"""SELECT height FROM blocks WHERE signature=${block.uniqueId}""".query[Int].option)
+      targetHeight = givenHeight - back
+      blockBytes  <- OptionT(sql"SELECT block_bytes FROM blocks WHERE height=$targetHeight".query[Array[Byte]].option)
+      resultBlock <- Block.parseBytes(blockBytes).toOption.liftTo[lamb]
+    } yield resultBlock*/
+
     ???
-  }*/
+  }
 
   /** Features related */
   override def approvedFeatures: Map[Short, Int] = {
@@ -425,7 +435,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .map(_.getOrElse(0L))
 
   def currentLeaseBalanceIo(addressId: BigInt): ConnectionIO[LeaseBalance] =
-    sql"SELECT amount FROM lease_balance WHERE address_id=$addressId AND height = (SELECT max(height) FROM lease_balance WHERE address_id=$addressId)"
+    sql"SELECT lease_in, lease_out FROM lease_balance WHERE address_id=$addressId AND height = (SELECT max(height) FROM lease_balance WHERE address_id=$addressId)"
       .query[LeaseBalance]
       .option
       .map(_.getOrElse(LeaseBalance(0L, 0L)))
