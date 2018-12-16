@@ -301,7 +301,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   def toTimestamp(ts: Long) = new java.sql.Timestamp(ts)
 
-  def putData(height: Int, tx: DataTransaction) = {
+  def insertData(tx: DataTransaction, height: Int) = {
     import cats._, cats.data._, cats.implicits._
 
     val sql = s"""
@@ -332,6 +332,17 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       y <- update
       x <- updateEntries
     } yield ()).runSync
+  }
+
+  def insertGenesisTransaction(tx: GenesisTransaction, height: Int) = {
+    sql"""
+         |INSERT INTO genesis_transactions
+         |(height, tx_type, id, time_stamp, signature, recipient, amount fee)
+         | VALUES
+         | (0, ${GenesisTransaction.typeId}, ${tx
+           .id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
+      """.stripMargin.update.run.runSync
+
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -773,7 +784,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
           insertTransfer(t, height)
           newTransactions += id -> ((tx, addresses.map(addressId)))
         case d: DataTransaction =>
-          putData(height, d)
+          insertData(d, height)
           newTransactions += id -> ((tx, addresses.map(addressId)))
         case _ => println("oops")
       }
