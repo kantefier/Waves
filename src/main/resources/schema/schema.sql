@@ -261,7 +261,7 @@ CREATE TABLE public.set_asset_script_transactions
 -- addresses
 CREATE TABLE public.addresses
 (
-  id      BIGINT            NOT NULL PRIMARY KEY,
+  id      SERIAL            NOT NULL PRIMARY KEY,
   address character varying NOT NULL UNIQUE
 );
 

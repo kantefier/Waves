@@ -130,7 +130,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   import DoobieGetInstances._
 
-  override def height: Int = sql"SELECT max(height) FROM blocks".query[Int].unique.runSync
+  override def height: Int = sql"SELECT max(height) FROM blocks".query[Option[Int]].stream.compile.toList.runSync.headOption.flatten.getOrElse(0)
 
   override def score: BigInt = {
     for {
@@ -354,10 +354,10 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def carryFee: Long = {
     for {
-      currentHeight <- sql"SELECT max(height) FROM blocks".query[Int].unique
-      blockFee      <- sql"SELECT carry_fee FROM blocks WHERE height = $currentHeight".query[Long].unique
+      currentHeight <- sql"SELECT max(height) FROM blocks".query[Option[Int]].stream.compile.toList.runSync.headOption.flatten
+      blockFee = sql"SELECT carry_fee FROM blocks WHERE height = $currentHeight".query[Long].unique.runSync
     } yield blockFee
-  }.runSync
+  }.getOrElse(0)
 
   override def blockBytes(height: Int): Option[Array[Byte]] =
     sql"SELECT block_bytes FROM blocks WHERE height = $height".query[Array[Byte]].option.runSync
@@ -468,7 +468,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
   override def transactionHeight(id: ByteStr): Option[Int] = {
-    sql"SELECT height FROM transactions WHERE id = '${id.toString}'"
+    sql"SELECT height FROM transactions WHERE id = ${id.toString}"
       .query[Int]
       .option
       .runSync
@@ -478,7 +478,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     ???
 
   override def containsTransaction(tx: Transaction): Boolean = {
-    sql"SELECT id FROM transactions WHERE id = '${tx.id().toString}'"
+    sql"SELECT id FROM transactions WHERE id = ${tx.id().toString}"
       .query[String]
       .option
       .runSync
@@ -497,7 +497,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   def addressIdForAddress(address: Address): ConnectionIO[Option[BigInt]] =
-    sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].option
+    sql"SELECT id FROM addresses WHERE address = ${address.toString}".query[BigInt].option
 
   override def resolveAlias(a: Alias): Either[ValidationError, Address] = {
     //TODO: check alias disabled (there's no such table currently, maybe we'll add it as s field to aliases table)
@@ -520,8 +520,9 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def accountScript(address: Address): Option[Script] = {
     for {
       addressId  <- OptionT(addressIdForAddress(address))
-      lastHeight <- OptionT(sql"SELECT max(height) FROM account_script_history WHERE account_id=$addressId".query[Int].option)
-      scriptOpt  <- OptionT(sql"SELECT script FROM address_scripts_at_height WHERE address_id=$addressId AND height=$lastHeight".query[Script].option)
+      lastHeight <- OptionT(sql"SELECT max(height) FROM account_script_history WHERE account_id = $addressId".query[Int].option)
+      scriptOpt <- OptionT(
+        sql"SELECT script FROM address_scripts_at_height WHERE address_id = $addressId AND height = $lastHeight".query[Script].option)
     } yield scriptOpt
   }.value.runSync
 
@@ -529,8 +530,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def assetScript(id: AssetId): Option[Script] = {
     for {
-      lastHeight <- sql"SELECT max(height) FROM assets_script_history WHERE asset_id='$id'".query[Int].unique
-      scriptOpt  <- sql"SELECT script FROM asset_scripts_at_height WHERE asset_id='$id' AND height=$lastHeight".query[Script].option
+      lastHeight <- sql"SELECT max(height) FROM assets_script_history WHERE asset_id = ${id.toString}".query[Int].unique
+      scriptOpt  <- sql"SELECT script FROM asset_scripts_at_height WHERE asset_id = ${id.toString} AND height = $lastHeight".query[Script].option
     } yield scriptOpt
   }.runSync
 
@@ -564,7 +565,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   override def balance(address: Address, mayBeAssetId: Option[AssetId]): Long = {
-    sql"SELECT id FROM addresses WHERE address='${address.toString}'"
+    sql"SELECT id FROM addresses WHERE address = ${address.toString}"
       .query[BigInt]
       .unique
       .flatMap { addressId =>
@@ -573,12 +574,12 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
             sql"""SELECT amount
                  |FROM asset_balances
                  |WHERE address_id=$addressId
-                 |  AND asset_id='$assetId'
+                 |  AND asset_id=$assetId
                  |  AND height = (
                  |    SELECT max(height)
                  |    FROM assets_balances
                  |    WHERE address_id=$addressId
-                 |      AND asset_id='$assetId')"""
+                 |      AND asset_id=$assetId)"""
               .query[Long]
               .option
               .map(_.getOrElse(0L))
@@ -596,7 +597,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
          |  INNER JOIN (
          |    SELECT address_id, max(height) as maxheight
          |    FROM asset_balances
-         |    WHERE asset_id = '$assetId'
+         |    WHERE asset_id = $assetId
          |    GROUP BY address_id) t2
          |      ON t1.address_id=t2.address_id AND t1.height=t2.maxheight
          |  INNER JOIN addresses t3
@@ -670,7 +671,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   private def getVolumeAndFeeForOrder(orderId: ByteStr): Option[VolumeAndFee] = {
-    sql"SELECT volume, fee FROM volume_and_fee_for_order_at_height WHERE order_id = '${orderId.toString}' AND height = (SELECT MAX(height) FROM volume_and_fee_for_order_at_height t WHERE t.order_id = '${orderId.toString}')"
+    sql"SELECT volume, fee FROM volume_and_fee_for_order_at_height WHERE order_id = ${orderId.toString} AND height = (SELECT MAX(height) FROM volume_and_fee_for_order_at_height t WHERE t.order_id = ${orderId.toString})"
       .query[(Long, Long)]
       .stream
       .map(f => VolumeAndFee(f._1, f._2))
@@ -681,7 +682,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   private def getLastAssetInfo(assetId: ByteStr): Option[AssetInfo] = {
-    sql"SELECT is_reissuable, volume FROM assets_info WHERE asset_id = '${assetId.toString}' AND height = (SELECT MAX(height) FROM assets_info ai2 WHERE ai2.asset_id = '${assetId.toString}')"
+    sql"SELECT is_reissuable, volume FROM assets_info WHERE asset_id = ${assetId.toString} AND height = (SELECT MAX(height) FROM assets_info ai2 WHERE ai2.asset_id = ${assetId.toString})"
       .query[AssetInfo]
       .option
       .runSync
@@ -689,7 +690,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   private def insertAdresses(addresses: Iterable[Address]): Map[Long, Address] = {
     val result = for (address <- addresses) yield {
-      sql"insert into addresses (address) values ('${address.toString}')".update.withUniqueGeneratedKeys[(Long, String)]("id", "address").runSync
+      sql"insert into addresses (address) values (${address.toString})".update.withUniqueGeneratedKeys[(Long, String)]("id", "address").runSync
     }
     result.toMap.mapValues(Address.fromString(_).right.get)
   }
@@ -720,26 +721,26 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   private def insertNewAssets(addressId: Long, assetsId: Set[ByteStr]): Unit = {
     for (assetId <- assetsId) {
-      sql"insert into addresses_assets values ($addressId, '${assetId.toString}')".update.run.runSync
+      sql"insert into addresses_assets values ($addressId, ${assetId.toString})".update.run.runSync
     }
   }
 
   private def insertAssetBalance(addressId: Long, assetId: ByteStr, height: Int, balance: Long): Unit = {
-    sql"insert into current_asset_balance values ($addressId, $height, '${assetId.toString}', $balance)".update.run.runSync
+    sql"insert into current_asset_balance values ($addressId, $height, ${assetId.toString}, $balance)".update.run.runSync
   }
 
   private def insertVolumeAndFee(orderId: ByteStr, height: Int, volumeAndFee: VolumeAndFee): Unit = {
-    sql"insert into volume_and_fee_for_order_at_height values ('${orderId.toString}', $height, ${volumeAndFee.volume}, ${volumeAndFee.fee})".update.run.runSync
+    sql"insert into volume_and_fee_for_order_at_height values (${orderId.toString}, $height, ${volumeAndFee.volume}, ${volumeAndFee.fee})".update.run.runSync
   }
 
   private def insertAssetInfo(assetId: ByteStr, assetInfo: AssetInfo, height: Int): Unit = {
-    sql"insert into assets_info values ('${assetId.toString}', ${assetInfo.isReissuable}, ${assetInfo.volume}, $height)".update.run.runSync
+    sql"insert into assets_info values (${assetId.toString}, ${assetInfo.isReissuable}, ${assetInfo.volume}, $height)".update.run.runSync
   }
 
   private def insertDataEntry(txId: ByteStr, addressId: Long, dataEntry: DataEntry[_]) = {}
 
   private def insertDataHistory(addressId: Long, key: String, height: Int) = {
-    sql"insert into data_history values ('${addressId.toString}', '$key', $height)".update.run.runSync
+    sql"insert into data_history values (${addressId.toString}, $key, $height)".update.run.runSync
   }
 
   private def insertApprovedFeatures(approvedFeatures: Map[Short, Int]): Unit = {
