@@ -103,7 +103,7 @@ trait Blockchain {
 
 class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Blockchain {
   import scala.concurrent.duration._
-  val chainId = com.wavesplatform.account.AddressScheme.current.chainId
+  def chainId() = com.wavesplatform.account.AddressScheme.current.chainId
 
   import cats._
   import cats.implicits._
@@ -180,7 +180,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
         .query[IssueTransactionV1]
         .map(t => t.asInstanceOf[IssueTransaction])
     val v2: Query0[IssueTransaction] =
-      sql"""SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs
+      sql"""SELECT 2, ${chainId()}, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs
            |FROM issue_transaction"""
         .query[IssueTransactionV2]
         .map(t => t.asInstanceOf[IssueTransaction])
@@ -209,7 +209,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
         |FROM issue_transaction""".stripMargin
 
   val transferTxV2Fragment =
-    fr"""SELECT 2,  sender, recipient, asset_id AS assetId, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, proofs
+    fr"""SELECT 2, sender, recipient, asset_id AS assetId, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, proofs
         |FROM issue_transaction""".stripMargin
 
   def transferTxOnHeight(height: Int) = {
