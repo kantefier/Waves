@@ -28,7 +28,8 @@ CREATE TABLE public.transactions
   proofs            character varying[],
   tx_version        smallint,
   sender            character varying,
-  sender_public_key character varying
+  sender_public_key character varying,
+  tx_bytes          text                        NOT NULL
 );
 
 -- type = 1
@@ -416,14 +417,14 @@ CREATE TABLE public.sponsorship_history
 CREATE TABLE public.assets_script_history
 (
   asset_id character varying NOT NULL,
-  heights  INTEGER[]         NOT NULL,
-  PRIMARY KEY (asset_id)
+  height   integer           NOT NULL REFERENCES "public"."blocks" ("height"),
+  PRIMARY KEY (asset_id, height)
 );
 
 -- Script history for accountId
 CREATE TABLE public.account_script_history
 (
-  account_id BIGINT    NOT NULL,
-  heights    INTEGER[] NOT NULL,
-  PRIMARY KEY (account_id)
+  account_id BIGINT  NOT NULL,
+  height     integer NOT NULL REFERENCES "public"."blocks" ("height"),
+  PRIMARY KEY (account_id, height)
 );

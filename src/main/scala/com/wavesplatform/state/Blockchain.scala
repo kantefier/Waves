@@ -236,11 +236,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       sql"""
           |INSERT INTO transfer_transactions
           |(height, tx_type, id, time_stamp, signature, tx_version,
-          |sender, sender_public_key, fee, asset_id, amount,
+          |sender, sender_public_key, tx_bytes, fee, asset_id, amount,
           |recipient, fee_asset, attachment)
           |VALUES
           |($height, ${TransferTransaction.typeId}, ${txV1.id()}, ${toTimestamp(txV1.timestamp)}, ${txV1.signature}, ${txV1.version},
-          |${txV1.sender.toAddress}, ${Base58.encode(txV1.sender.publicKey)}, ${txV1.fee}, ${txV1.assetId}, ${txV1.amount},
+          |${txV1.sender.toAddress}, ${Base58.encode(txV1.sender.publicKey)}, ${Base58.encode(tx.bytes())}, ${txV1.fee}, ${txV1.assetId}, ${txV1.amount},
           |${txV1.recipient}, ${txV1.feeAssetId}, ${txV1.attachment})
         """.stripMargin
     } else {
@@ -248,11 +248,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       sql"""
            |INSERT INTO transfer_transactions
            |(height, tx_type, id, time_stamp, proofs, tx_version,
-           |sender, sender_public_key, fee, asset_id, amount,
+           |sender, sender_public_key, tx_bytes, fee, asset_id, amount,
            |recipient, fee_asset, attachment)
            |VALUES
            |($height, ${TransferTransaction.typeId}, ${txV2.id()}, ${toTimestamp(txV2.timestamp)}, ${txV2.proofs}, ${txV2.version},
-           |${txV2.sender.toAddress}, ${Base58.encode(txV2.sender.publicKey)}, ${txV2.fee}, ${txV2.assetId}, ${txV2.amount},
+           |${txV2.sender.toAddress}, ${Base58.encode(txV2.sender.publicKey)}, ${Base58.encode(tx.bytes())}, ${txV2.fee}, ${txV2.assetId}, ${txV2.amount},
            |${txV2.recipient}, ${txV2.feeAssetId}, ${txV2.attachment})
         """.stripMargin
     }
@@ -277,15 +277,15 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   def datadataTxFr(txId: ByteStr) =
     sql"""
         |SELECT position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string
-        |FROM data_transactions_data
-        |WHERE tx_id = $txId
+        | FROM data_transactions_data
+        | WHERE tx_id = $txId
       """.stripMargin
       .query[(Int, DataEntry[_])]
 
   def dataTx(height: Int) = {
     val q = fr"""SELECT id, 1, sender, fee, time_stamp AS timestamp, proofs
-        |FROM data_transactions
-        |WHERE height = $height"""
+        | FROM data_transactions
+        | WHERE height = $height"""
       .query[(ByteStr, Byte, PublicKeyAccount, Long, Long, Proofs)]
 
     for {
@@ -306,8 +306,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
     val sql = s"""
          |INSERT INTO data_transactions_data
-         |(height, tx_id, position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string)
-         |VALUES
+         | (height, tx_id, position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string)
+         | VALUES
          |($height, ?, ?, ?, ?, ?, ?, ?, ?)
          |
        """.stripMargin
@@ -322,10 +322,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     val update =
       sql"""
         |INSERT INTO data_transactions
-        |(height, tx_type, id, time_stamp, proofs, tx_version, sender, sender_public_key, fee)
+        |(height, tx_type, id, time_stamp, proofs, tx_version, sender, sender_public_key, tx_bytes, fee)
         | VALUES
         | ($height, ${DataTransaction.typeId}, ${tx
-             .id()}, ${toTimestamp(tx.timestamp)}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(tx.sender.publicKey)}, ${tx.fee})
+             .id()}, ${toTimestamp(tx.timestamp)}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(tx.sender.publicKey)}, ${Base58
+             .encode(tx.bytes())}, ${tx.fee})
       """.stripMargin.update.run
 
     (for {
@@ -337,9 +338,10 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   def insertGenesisTransaction(tx: GenesisTransaction, height: Int) = {
     sql"""
          |INSERT INTO genesis_transactions
-         |(height, tx_type, id, time_stamp, signature, recipient, amount, fee)
+         |(height, tx_type, id, time_stamp, signature, tx_bytes, recipient, amount, fee)
          | VALUES
-         | ($height, ${GenesisTransaction.typeId}, ${tx.id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
+         | ($height, ${GenesisTransaction.typeId}, ${tx
+           .id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${Base58.encode(tx.bytes())}, ${tx.recipient}, ${tx.amount}, 0)
       """.stripMargin.update.run.runSync
 
   }
@@ -443,15 +445,15 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   def currentAssetBalances(addressId: BigInt): ConnectionIO[Map[AssetId, Long]] =
     sql"""SELECT t1.asset_id, t1.amount
-         |FROM asset_balances_test t1
-         |INNER JOIN (
+         | FROM asset_balances t1
+         | INNER JOIN (
          |  SELECT address_id, asset_id, max(height) as maxheight
-         |  FROM asset_balances_test
-         |  WHERE address_id=$addressId
+         |  FROM asset_balances
+         |  WHERE address_id = $addressId
          |  GROUP BY address_id, asset_id) t2
-         |    ON t1.address_id=t2.address_id
-         |    AND t1.asset_id=t2.asset_id
-         |    AND t1.height=t2.maxheight""".stripMargin
+         |    ON t1.address_id = t2.address_id
+         |    AND t1.asset_id = t2.asset_id
+         |    AND t1.height = t2.maxheight""".stripMargin
       .query[(AssetId, Long)]
       .stream
       .compile
@@ -467,7 +469,19 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     } yield Portfolio(wavesBalance, leaseBalance, assetToAmountMap)
   }.value.runSync.getOrElse(Portfolio.empty)
 
-  override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
+  override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = {
+    for {
+      (height, txType, txVersion, bytes) <- sql"SELECT height, tx_type, tx_version, tx_bytes FROM transactions WHERE id = ${id.toString}"
+        .query[Option[(Int, Short, Short, String)]]
+        .stream
+        .compile
+        .toList
+        .runSync
+        .headOption
+        .flatten
+      parser <- TransactionParsers.by(txType.toByte, txVersion.toByte)
+    } yield (height, parser.parseBytes(Base58.decode(bytes).get).get)
+  }
 
   override def transactionHeight(id: ByteStr): Option[Int] = {
     sql"SELECT height FROM transactions WHERE id = ${id.toString}"
@@ -504,8 +518,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def resolveAlias(a: Alias): Either[ValidationError, Address] = {
     //TODO: check alias disabled (there's no such table currently, maybe we'll add it as s field to aliases table)
     (for {
-      addressId <- OptionT(sql"SELECT address_id FROM aliases WHERE alias='${a.toString}'".query[BigInt].option)
-      address   <- OptionT(sql"SELECT address FROM addresses WHERE id='$addressId'".query[Address].option)
+      addressId <- OptionT(sql"SELECT address_id FROM aliases WHERE alias =${a.toString}".query[BigInt].option)
+      address   <- OptionT(sql"SELECT address FROM addresses WHERE id = $addressId".query[Address].option)
     } yield address).value.runSync
       .toRight(AliasDoesNotExist(a))
   }
@@ -532,10 +546,20 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def assetScript(id: AssetId): Option[Script] = {
     for {
-      lastHeight <- sql"SELECT max(height) FROM assets_script_history WHERE asset_id = ${id.toString}".query[Int].unique
-      scriptOpt  <- sql"SELECT script FROM asset_scripts_at_height WHERE asset_id = ${id.toString} AND height = $lastHeight".query[Script].option
+      lastHeight <- sql"SELECT max(height) FROM assets_script_history WHERE asset_id = ${id.toString}"
+        .query[Option[Int]]
+        .stream
+        .compile
+        .toList
+        .runSync
+        .headOption
+        .flatten
+      scriptOpt <- sql"SELECT script FROM asset_scripts_at_height WHERE asset_id = ${id.toString} AND height = $lastHeight"
+        .query[Script]
+        .option
+        .runSync
     } yield scriptOpt
-  }.runSync
+  }
 
   override def hasAssetScript(id: AssetId): Boolean = assetScript(id).isDefined
 
@@ -574,14 +598,14 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
         mayBeAssetId match {
           case Some(assetId) =>
             sql"""SELECT amount
-                 |FROM asset_balances
-                 |WHERE address_id=$addressId
-                 |  AND asset_id=$assetId
+                 | FROM asset_balances
+                 | WHERE address_id = $addressId
+                 |  AND asset_id = $assetId
                  |  AND height = (
                  |    SELECT max(height)
                  |    FROM assets_balances
-                 |    WHERE address_id=$addressId
-                 |      AND asset_id=$assetId)"""
+                 |    WHERE address_id = $addressId
+                 |      AND asset_id = $assetId)"""
               .query[Long]
               .option
               .map(_.getOrElse(0L))
@@ -595,15 +619,15 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = {
     sql"""SELECT t3.address, t1.amount
-         |FROM asset_balances t1
+         | FROM asset_balances t1
          |  INNER JOIN (
          |    SELECT address_id, max(height) as maxheight
          |    FROM asset_balances
          |    WHERE asset_id = $assetId
          |    GROUP BY address_id) t2
-         |      ON t1.address_id=t2.address_id AND t1.height=t2.maxheight
+         |      ON t1.address_id = t2.address_id AND t1.height = t2.maxheight
          |  INNER JOIN addresses t3
-         |      ON t1.address_id=t3.id""".stripMargin
+         |      ON t1.address_id = t3.id""".stripMargin
       .query[(Address, Long)]
       .stream
       .compile
@@ -619,15 +643,15 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def wavesDistribution(height: Int): Map[Address, Long] = {
     sql"""SELECT t3.address, t1.amount
-         |FROM waves_balances t1
+         | FROM waves_balances t1
          |  INNER JOIN (
          |    SELECT address_id, max(height) as maxheight
          |    FROM waves_balances
          |    WHERE height <= $height
          |    GROUP BY address_id) t2
-         |      ON t1.address_id=t2.address_id AND t1.height=t2.maxheight
+         |      ON t1.address_id = t2.address_id AND t1.height = t2.maxheight
          |  INNER JOIN addresses t3
-         |      ON t1.address_id=t3.id""".stripMargin
+         |      ON t1.address_id = t3.id""".stripMargin
       .query[(Address, Long)]
       .stream
       .compile
@@ -714,7 +738,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   private def insertWavesBalance(addressId: Long, height: Int, balance: Long): Unit = {
-    sql"insert into current_waves_balance values ($addressId, $height, $balance)".update.run.runSync
+    sql"insert into waves_balances values ($addressId, $height, $balance)".update.run.runSync
   }
 
   private def insertLeaseBalance(addressId: Long, height: Int, in: Long, out: Long): Unit = {
@@ -728,7 +752,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   private def insertAssetBalance(addressId: Long, assetId: ByteStr, height: Int, balance: Long): Unit = {
-    sql"insert into current_asset_balance values ($addressId, $height, ${assetId.toString}, $balance)".update.run.runSync
+    sql"insert into asset_balances values ($addressId, $height, ${assetId.toString}, $balance)".update.run.runSync
   }
 
   private def insertVolumeAndFee(orderId: ByteStr, height: Int, volumeAndFee: VolumeAndFee): Unit = {
