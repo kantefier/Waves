@@ -3,7 +3,6 @@ package com.wavesplatform.state
 import cats.data.{NonEmptyList, OptionT}
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
-import com.wavesplatform.database.Keys
 import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
@@ -308,7 +307,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def assetDescription(id: AssetId): Option[AssetDescription] = {
     transactionInfo(id) match {
       case Some((_, i: IssueTransaction)) =>
-        val ai          = getLastAssetInfo(id).getOrElse(AssetInfo(i.reissuable, i.quantity))
+        val ai = getLastAssetInfo(id).getOrElse(AssetInfo(i.reissuable, i.quantity))
 //        val sponsorship = db.fromHistory(Keys.sponsorshipHistory(assetId), Keys.sponsorship(assetId)).fold(0L)(_.minFee)
 //        val script      = db.fromHistory(Keys.assetScriptHistory(assetId), Keys.assetScript(assetId)).flatten
         Some(AssetDescription(i.sender, i.name, i.description, i.decimals, ai.isReissuable, ai.volume, None, 0))
@@ -357,7 +356,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def accountData(acc: Address): AccountDataInfo = {
     val addressId = getAddressId(acc)
 
-    sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
+    val list = sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
          | FROM data_transactions_data AS dtd,
          | (SELECT dh.key AS key, MAX(dh.height) AS max_height FROM data_history AS dh WHERE dh.address_id = $addressId GROUP BY dh.key) as t
          | WHERE dtd.data_key = t.key AND dtd.height = t.max_height""".stripMargin
@@ -365,9 +364,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .stream
       .compile
       .toList
-      .map(list => list.map(de => de.key -> de).toMap)
-      .map(AccountDataInfo(_))
       .runSync
+    AccountDataInfo(list.map(de => de.key -> de).toMap)
   }
 
   override def accountData(acc: Address, key: String): Option[DataEntry[_]] = {
