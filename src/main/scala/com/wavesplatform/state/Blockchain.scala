@@ -341,6 +341,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
          | VALUES
          | ($height, ${GenesisTransaction.typeId}, ${tx.id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
       """.stripMargin.update.run.runSync
+
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -435,7 +436,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   def currentLeaseBalanceIo(addressId: BigInt): ConnectionIO[LeaseBalance] =
     sql"SELECT lease_in, lease_out FROM lease_balance WHERE address_id=$addressId AND height = (SELECT max(height) FROM lease_balance WHERE address_id=$addressId)"
-      .query[LeaseBalance]
+      .query[(Long, Long)]
+      .map { case (in, out) => LeaseBalance(in, out) }
       .option
       .map(_.getOrElse(LeaseBalance(0L, 0L)))
 
@@ -809,13 +811,12 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       tx match {
         case t: TransferTransaction =>
           insertTransfer(t, height)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
         case d: DataTransaction =>
           insertData(d, height)
-        case g: GenesisTransaction =>
-          insertGenesisTransaction(g, height)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
         case _ => println("oops")
       }
-      newTransactions += id -> ((tx, addresses.map(addressId)))
     }
 
     for ((addressId, balance) <- wavesBalances.result()) {
