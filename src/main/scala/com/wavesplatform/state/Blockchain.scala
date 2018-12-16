@@ -366,6 +366,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .map(_.getOrElse(LeaseBalance(0L, 0L)))
 
   override def portfolio(a: Address): Portfolio = {
+
     /**
       * get addressId
       * get current wavesBalance
@@ -489,21 +490,13 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
                  |      AND asset_id='$assetId')"""
               .query[Long]
               .option
+              .map(_.getOrElse(0L))
 
           case None =>
-            sql"""SELECT amount
-                 |FROM waves_balances
-                 |WHERE address_id=$addressId
-                 |  AND height = (
-                 |    SELECT max(height
-                 |    FROM waves_balances
-                 |    WHERE address_id=$addressId)"""
-              .query[Long]
-              .option
+            currentWavesBalanceIo(addressId)
         }
       }
       .runSync
-      .getOrElse(0L)
   }
 
   override def assetDistribution(assetId: AssetId): Map[Address, Long] = {
