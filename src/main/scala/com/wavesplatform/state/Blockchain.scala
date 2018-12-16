@@ -407,6 +407,9 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     }
   }
 
+  def addressIdForAddress(address: Address): ConnectionIO[Option[BigInt]] =
+    sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].option
+
   override def resolveAlias(a: Alias): Either[ValidationError, Address] = {
     //TODO: check alias disabled (there's no such table currently, maybe we'll add it as s field to aliases table)
     (for {
@@ -428,11 +431,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def accountScript(address: Address): Option[Script] = {
     // address -> addressId -> accountScriptHistory -> accountScript
     for {
-      addressId  <- sql"SELECT id FROM addresses WHERE address='${address.toString}'".query[BigInt].unique
-      lastHeight <- sql"SELECT max(height) FROM account_script_history WHERE account_id=$addressId".query[Int].unique
-      scriptOpt  <- sql"SELECT script FROM address_scripts_at_height WHERE address_id=$addressId AND height=$lastHeight".query[Script].option
+      addressId  <- OptionT(addressIdForAddress(address))
+      lastHeight <- OptionT(sql"SELECT max(height) FROM account_script_history WHERE account_id=$addressId".query[Int].option)
+      scriptOpt  <- OptionT(sql"SELECT script FROM address_scripts_at_height WHERE address_id=$addressId AND height=$lastHeight".query[Script].option)
     } yield scriptOpt
-  }.runSync
+  }.value.runSync
 
   override def hasScript(address: Address): Boolean = accountScript(address).isDefined
 
