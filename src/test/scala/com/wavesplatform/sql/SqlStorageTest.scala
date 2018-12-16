@@ -75,7 +75,7 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
       )
 
       val tx = DataTransaction.selfSigned(1, signerA, des, 300, System.currentTimeMillis()).right.get
-      db.putData(1, tx)
+      db.insertDate(tx, 1)
     }
 
     "transfer db test" in {
