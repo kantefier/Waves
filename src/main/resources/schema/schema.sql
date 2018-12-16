@@ -79,10 +79,10 @@ CREATE TABLE public.transfer_transactions
   sender            character varying NOT NULL,
   sender_public_key character varying NOT NULL,
   fee               bigint            NOT NULL,
-  asset_id          character varying NOT NULL,
+  asset_id          character varying,
   amount            bigint            NOT NULL,
   recipient         character varying NOT NULL,
-  fee_asset         character varying NOT NULL,
+  fee_asset         character varying,
   attachment        character varying NOT NULL,
   PRIMARY KEY (id),
   FOREIGN KEY ("height") REFERENCES "public"."blocks" ("height")
