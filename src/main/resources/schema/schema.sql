@@ -289,7 +289,7 @@ CREATE TABLE public.asset_balances
   height     integer           NOT NULL REFERENCES "public"."blocks" ("height"),
   asset_id   character varying NOT NULL,
   amount     BIGINT,
-  PRIMARY KEY (address_id, asset_id)
+  PRIMARY KEY (address_id, asset_id, height)
 );
 
 -- Assets info history
@@ -310,21 +310,13 @@ CREATE TABLE public.assets_info
   PRIMARY KEY (asset_id, height)
 );
 
--- Lease balance history
-CREATE TABLE public.lease_balance_history
-(
-  address_id BIGINT    NOT NULL REFERENCES public.addresses ("id"),
-  heights    integer[] NOT NULL,
-  PRIMARY KEY (address_id)
-);
-
 -- Lease balance for address at height
-CREATE TABLE public.lease_balance_at_height
+CREATE TABLE public.lease_balance
 (
   address_id BIGINT  NOT NULL REFERENCES public.addresses ("id"),
   height     integer NOT NULL REFERENCES "public"."blocks" ("height"),
-  "in"       BIGINT  NOT NULL,
-  out        BIGINT  NOT NULL,
+  lease_in   BIGINT  NOT NULL,
+  lease_out  BIGINT  NOT NULL,
   PRIMARY KEY (address_id, height)
 );
 

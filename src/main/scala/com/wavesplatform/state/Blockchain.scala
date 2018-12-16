@@ -353,7 +353,27 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .mapValues(_.size)
   }
 
-  override def portfolio(a: Address): Portfolio = ???
+  def currentWavesBalanceIo(addressId: BigInt): ConnectionIO[Long] =
+    sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)"
+      .query[Long]
+      .option
+      .map(_.getOrElse(0L))
+
+  def currentLeaseBalanceIo(addressId: BigInt): ConnectionIO[LeaseBalance] =
+    sql"SELECT amount FROM lease_balance WHERE address_id=$addressId AND height = (SELECT max(height) FROM lease_balance WHERE address_id=$addressId)"
+      .query[LeaseBalance]
+      .option
+      .map(_.getOrElse(LeaseBalance(0L, 0L)))
+
+  override def portfolio(a: Address): Portfolio = {
+    /**
+      * get addressId
+      * get current wavesBalance
+      * get current leaseBalance
+      *
+      */
+    ???
+  }
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
@@ -458,11 +478,26 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .flatMap { addressId =>
         mayBeAssetId match {
           case Some(assetId) =>
-            sql"SELECT amount FROM assets_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM assets_balances WHERE address_id=$addressId)"
+            sql"""SELECT amount
+                 |FROM asset_balances
+                 |WHERE address_id=$addressId
+                 |  AND asset_id='$assetId'
+                 |  AND height = (
+                 |    SELECT max(height)
+                 |    FROM assets_balances
+                 |    WHERE address_id=$addressId
+                 |      AND asset_id='$assetId')"""
               .query[Long]
               .option
+
           case None =>
-            sql"SELECT amount FROM waves_balances WHERE address_id=$addressId AND height = (SELECT max(height) FROM waves_balances WHERE address_id=$addressId)"
+            sql"""SELECT amount
+                 |FROM waves_balances
+                 |WHERE address_id=$addressId
+                 |  AND height = (
+                 |    SELECT max(height
+                 |    FROM waves_balances
+                 |    WHERE address_id=$addressId)"""
               .query[Long]
               .option
         }
