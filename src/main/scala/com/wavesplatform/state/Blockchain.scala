@@ -862,7 +862,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     }
   }
 
-  override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = ???
+  override def rollbackTo(targetBlockId: AssetId): Either[String, Seq[Block]] = Right(Seq.empty)
 
   val txTypeIdToTable = Map(
     PaymentTransaction.typeId        -> "payment_transactions",
