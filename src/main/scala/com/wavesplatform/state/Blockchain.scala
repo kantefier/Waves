@@ -509,7 +509,6 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def balanceSnapshots(address: Address, from: Int, to: Int): Seq[BalanceSnapshot] = ???
 
   override def accountScript(address: Address): Option[Script] = {
-    // address -> addressId -> accountScriptHistory -> accountScript
     for {
       addressId  <- OptionT(addressIdForAddress(address))
       lastHeight <- OptionT(sql"SELECT max(height) FROM account_script_history WHERE account_id=$addressId".query[Int].option)
@@ -625,12 +624,12 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .runSync
   }
 
-  override def allActiveLeases: Set[LeaseTransaction] = ???
+  override def allActiveLeases: Set[LeaseTransaction] = Set.empty
 
   /** Builds a new portfolio map by applying a partial function to all portfolios on which the function is defined.
     *
     * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
-  override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
+  override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = Map.empty
 
   private def getAddressId(address: Address): Long = {
     sql"SELECT id FROM addresses WHERE address = ${address.stringRepr}"

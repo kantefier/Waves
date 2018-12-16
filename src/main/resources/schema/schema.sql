@@ -320,14 +320,6 @@ CREATE TABLE public.lease_balance
   PRIMARY KEY (address_id, height)
 );
 
--- Lease status history
-CREATE TABLE public.lease_status_history
-(
-  lease_id CHARACTER VARYING NOT NULL REFERENCES public.lease_transactions ("id"),
-  heights  integer[]         NOT NULL,
-  PRIMARY KEY (lease_id)
-);
-
 -- Lease status at height
 CREATE TABLE public.lease_status_at_height
 (
