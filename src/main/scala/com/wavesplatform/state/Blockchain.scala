@@ -204,11 +204,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     sql"".query[StringDataEntry]
   }
 
-  val transferTxV1Fragment =
+  private val transferTxV1Fragment =
     fr"""SELECT asset_id AS assetId, sender, recipient, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, signature
         |FROM issue_transaction""".stripMargin
 
-  val transferTxV2Fragment =
+  private val transferTxV2Fragment =
     fr"""SELECT 2, sender, recipient, asset_id AS assetId, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, proofs
         |FROM issue_transaction""".stripMargin
 
@@ -239,7 +239,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
           |sender, sender_public_key, fee, asset_id, amount,
           |recipient, fee_asset, attachment)
           |VALUES
-          |($height, ${TransferTransaction.typeId}, ${txV1.id()}, ${txV1.timestamp}, ${txV1.signature}, ${txV1.version},
+          |($height, ${TransferTransaction.typeId}, ${txV1.id()}, ${toTimestamp(txV1.timestamp)}, ${txV1.signature}, ${txV1.version},
           |${txV1.sender.toAddress}, ${Base58.encode(txV1.sender.publicKey)}, ${txV1.fee}, ${txV1.assetId}, ${txV1.amount},
           |${txV1.recipient}, ${txV1.feeAssetId}, ${txV1.attachment})
         """.stripMargin
@@ -251,7 +251,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
            |sender, sender_public_key, fee, asset_id, amount,
            |recipient, fee_asset, attachment)
            |VALUES
-           |($height, ${TransferTransaction.typeId}, ${txV2.id()}, ${txV2.timestamp}, ${txV2.proofs}, ${txV2.version},
+           |($height, ${TransferTransaction.typeId}, ${txV2.id()}, ${toTimestamp(txV2.timestamp)}, ${txV2.proofs}, ${txV2.version},
            |${txV2.sender.toAddress}, ${Base58.encode(txV2.sender.publicKey)}, ${txV2.fee}, ${txV2.assetId}, ${txV2.amount},
            |${txV2.recipient}, ${txV2.feeAssetId}, ${txV2.attachment})
         """.stripMargin
@@ -299,6 +299,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     }
   }
 
+  def toTimestamp(ts: Long) = new java.sql.Timestamp(ts)
+
   def putData(height: Int, tx: DataTransaction) = {
     import cats._, cats.data._, cats.implicits._
 
@@ -323,8 +325,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
         |(height, tx_type, id, time_stamp, proofs, tx_version, sender, sender_public_key, fee)
         | VALUES
         | ($height, ${DataTransaction.typeId}, ${tx
-             .id()}, ${new java.sql.Timestamp(tx.timestamp)}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(
-             tx.sender.publicKey)}, ${tx.fee})
+             .id()}, ${toTimestamp(tx.timestamp)}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(tx.sender.publicKey)}, ${tx.fee})
       """.stripMargin.update.run
 
     (for {
@@ -780,10 +781,18 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     insertBlock(block, newHeight, carryFee)
 
     // TODO: insert transactions
-    //    val newTransactions = Map.newBuilder[ByteStr, (Transaction, Set[Long])]
-    //    for ((id, (_, tx, addresses)) <- diff.transactions) {
-    //      newTransactions += id -> ((tx, addresses.map(addressId)))
-    //    }
+    val newTransactions = Map.newBuilder[ByteStr, (Transaction, Set[Long])]
+    for ((id, (_, tx, addresses)) <- diff.transactions) {
+      tx match {
+        case t: TransferTransaction =>
+          insertTransfer(t, height)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
+        case d: DataTransaction =>
+          putData(height, d)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
+        case _ => println("oops")
+      }
+    }
 
     for ((addressId, balance) <- wavesBalances.result()) {
       insertWavesBalance(addressId, newHeight, balance)

@@ -9,14 +9,16 @@ import com.wavesplatform.crypto.KeyLength
 import com.wavesplatform.lagonaki.mocks.TestBlock
 import com.wavesplatform.settings.TestFunctionalitySettings
 import com.wavesplatform.state.{BinaryDataEntry, BooleanDataEntry, ByteStr, IntegerDataEntry, SqlDb, StringDataEntry}
+import com.wavesplatform.transaction.transfer.{TransferTransactionV1, TransferTransactionV2}
 import com.wavesplatform.transaction.{DataTransaction, GenesisTransaction}
 import monix.execution.Scheduler.fixedPool
 import org.scalatest.{FreeSpec, Matchers}
 
 class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
 
+  implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
+
   "sql db test" - {
-    implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
     val db          = new SqlDb(TestFunctionalitySettings.Enabled)
 
     "init succcessful" in {
@@ -61,10 +63,10 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
   }
 
   "data db test" - {
-    implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
+
     val db          = new SqlDb(TestFunctionalitySettings.Enabled)
 
-    "yolo" in {
+    "db put works" in {
       val des = List(
         IntegerDataEntry("ide", 3),
         BooleanDataEntry("bde", true),
@@ -73,8 +75,22 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
       )
 
       val tx = DataTransaction.selfSigned(1, signerA, des, 300, System.currentTimeMillis()).right.get
-
       db.putData(1, tx)
+    }
+
+    "transfer db test" in {
+      val t1 = TransferTransactionV1
+        .selfSigned(None, signerA, signerB.toAddress, 400, System.currentTimeMillis(), None, 300, Array[Byte](4, 2, 0))
+        .right
+        .get
+
+      val t2 = TransferTransactionV2
+        .selfSigned(2, None, signerB, signerA.toAddress, 400, System.currentTimeMillis() + 100, None, 300, Array[Byte](6, 9))
+        .right
+        .get
+
+      db.insertTransfer(t1, 1)
+      db.insertTransfer(t2, 1)
 
     }
   }
