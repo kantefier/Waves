@@ -16,8 +16,9 @@ import org.scalatest.{FreeSpec, Matchers}
 
 class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
 
+  implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
+
   "sql db test" - {
-    implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
     val db          = new SqlDb(TestFunctionalitySettings.Enabled)
 
     "init succcessful" in {
@@ -62,7 +63,7 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
   }
 
   "data db test" - {
-    implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
+
     val db          = new SqlDb(TestFunctionalitySettings.Enabled)
 
     "db put works" in {
