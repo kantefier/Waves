@@ -341,7 +341,6 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
          | VALUES
          | ($height, ${GenesisTransaction.typeId}, ${tx.id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
       """.stripMargin.update.run.runSync
-
   }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
@@ -810,12 +809,13 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       tx match {
         case t: TransferTransaction =>
           insertTransfer(t, height)
-          newTransactions += id -> ((tx, addresses.map(addressId)))
         case d: DataTransaction =>
           insertData(d, height)
-          newTransactions += id -> ((tx, addresses.map(addressId)))
+        case g: GenesisTransaction =>
+          insertGenesisTransaction(g, height)
         case _ => println("oops")
       }
+      newTransactions += id -> ((tx, addresses.map(addressId)))
     }
 
     for ((addressId, balance) <- wavesBalances.result()) {
