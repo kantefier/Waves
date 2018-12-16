@@ -158,14 +158,16 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   def paymentTx = {
 
-    sql"SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature) FROM payment_transactions"
+    sql"""SELECT (sender_public_key, recipient, amount, fee, time_stamp AS timestamp, signature)
+         |FROM payment_transactions"""
       .query[PaymentTransaction]
       .unique
       .runSync
   }
 
   def genesisTx = {
-    sql"SELECT address, amount, time_stamp AS timestamp, signature FROM genesis_transactions"
+    sql"""SELECT address, amount, time_stamp AS timestamp, signature
+         |FROM genesis_transactions"""
       .query[GenesisTransaction]
       .unique
       .runSync
@@ -173,11 +175,13 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   def issueTx: IssueTransaction = {
     val v1: Query0[IssueTransaction] =
-      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
+      sql"""SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature
+           |FROM issue_transaction"""
         .query[IssueTransactionV1]
         .map(t => t.asInstanceOf[IssueTransaction])
     val v2: Query0[IssueTransaction] =
-      sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
+      sql"""SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs
+           |FROM issue_transaction"""
         .query[IssueTransactionV2]
         .map(t => t.asInstanceOf[IssueTransaction])
 
@@ -186,7 +190,8 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     }
 
     (for {
-      v <- sql"SELECT tx_version FROM issue_transaction".query[Byte].unique
+      v <- sql"""SELECT tx_version
+             |FROM issue_transaction""".query[Byte].unique
       q <- chooseV(v).unique
     } yield q).runSync
   }
@@ -199,19 +204,85 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     sql"".query[StringDataEntry]
   }
 
-  def transferTx = {
-    val v1 =
-      sql"SELECT sender, asset_name AS name, description, quantity, decimals, reissuable, fee, time_stamp AS timestamp, signature FROM issue_transaction"
-        .query[TransferTransactionV1]
-        .map(t => t.asInstanceOf[TransferTransaction])
+  val transferTxV1Fragment =
+    fr"""SELECT asset_id AS assetId, sender, recipient, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, signature
+        |FROM issue_transaction""".stripMargin
 
-    val v2 =
-      sql"SELECT 2, $chainId, sender, asset_name AS name, description, quantity, decimals, reissuable, script, fee, time_stamp AS timestamp, proofs FROM issue_transaction"
-        .query[TransferTransactionV2]
-        .map(t => t.asInstanceOf[TransferTransaction])
+  val transferTxV2Fragment =
+    fr"""SELECT 2,  sender, recipient, asset_id AS assetId, amount, time_stamp AS timestamp, fee_asset AS feeAssetId, fee, attachment, proofs
+        |FROM issue_transaction""".stripMargin
 
-    if (true) v1 else v2
+  def transferTxOnHeight(height: Int) = {
+    val v1s = (transferTxV1Fragment ++ whereHeight(height))
+      .query[TransferTransactionV1]
+      .map(t => t.asInstanceOf[TransferTransaction])
+      .stream
+      .compile
+      .toList
+
+    val v2s = (transferTxV2Fragment ++ whereHeight(height))
+      .query[TransferTransactionV2]
+      .map(t => t.asInstanceOf[TransferTransaction])
+      .stream
+      .compile
+      .toList
+
+    (for (v1 <- v1s; v2 <- v2s) yield v1 ++ v2).runSync
   }
+
+  def insertTransfer(tx: TransferTransaction, height: Int) = {
+    val insert = if (tx.version == 1) {
+      val txV1 = tx.asInstanceOf[TransferTransactionV1]
+      sql"""
+          |INSERT INTO transfer_transactions
+          |(height, tx_type, id, time_stamp, signature, tx_version,
+          |sender, sender_public_key, fee, asset_id, amount,
+          |recipient, fee_asset, attachment)
+          |VALUES
+          |($height, ${TransferTransaction.typeId}, ${txV1.id()}, ${txV1.timestamp}, ${txV1.signature}, ${txV1.version},
+          |${txV1.sender.toAddress}, ${Base58.encode(txV1.sender.publicKey)}, ${txV1.fee}, ${txV1.assetId}, ${txV1.amount},
+          |${txV1.recipient}, ${txV1.feeAssetId}, ${txV1.attachment})
+        """.stripMargin
+    } else {
+      val txV2 = tx.asInstanceOf[TransferTransactionV2]
+      sql"""
+           |INSERT INTO transfer_transactions
+           |(height, tx_type, id, time_stamp, proofs, tx_version,
+           |sender, sender_public_key, fee, asset_id, amount,
+           |recipient, fee_asset, attachment)
+           |VALUES
+           |($height, ${TransferTransaction.typeId}, ${txV2.id()}, ${txV2.timestamp}, ${txV2.proofs}, ${txV2.version},
+           |${txV2.sender.toAddress}, ${Base58.encode(txV2.sender.publicKey)}, ${txV2.fee}, ${txV2.assetId}, ${txV2.amount},
+           |${txV2.recipient}, ${txV2.feeAssetId}, ${txV2.attachment})
+        """.stripMargin
+    }
+
+    insert.update.run.runSync
+  }
+
+  def transferTxById(id: ByteStr) = {
+    val v1s = (transferTxV1Fragment ++ whereId(id))
+      .query[TransferTransactionV1]
+      .map(t => t.asInstanceOf[TransferTransaction])
+      .option
+
+    val v2s = (transferTxV2Fragment ++ whereId(id))
+      .query[TransferTransactionV1]
+      .map(t => t.asInstanceOf[TransferTransaction])
+      .option
+
+    (for (v1 <- v1s; v2 <- v2s) yield v1.orElse(v1)).runSync
+  }
+
+  def datadataTxFr(txId: ByteStr) =
+    fr"""
+        |SELECT data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string
+        |FROM data_transactions_data
+        |WHERE tx_id = $txId
+        |ORDER BY position_in_tx ASC
+      """.stripMargin
+
+  def dataTx = {}
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
@@ -677,11 +748,11 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     SetAssetScriptTransaction.typeId -> "set_asset_script_transactions"
   )
 
-  def txOnHeight(height: Int) = {
+  def whereHeight(height: Int) = {
     fr"WHERE height = $height"
   }
 
-  def txWithId(id: ByteStr) = {
+  def whereId(id: ByteStr) = {
     fr"WHERE id = '${id.base58}'"
   }
 }
