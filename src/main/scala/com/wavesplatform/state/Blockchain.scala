@@ -337,10 +337,9 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   def insertGenesisTransaction(tx: GenesisTransaction, height: Int) = {
     sql"""
          |INSERT INTO genesis_transactions
-         |(height, tx_type, id, time_stamp, signature, recipient, amount fee)
+         |(height, tx_type, id, time_stamp, signature, recipient, amount, fee)
          | VALUES
-         | (0, ${GenesisTransaction.typeId}, ${tx
-           .id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
+         | ($height, ${GenesisTransaction.typeId}, ${tx.id()}, ${toTimestamp(tx.timestamp)}, ${tx.signature}, ${tx.recipient}, ${tx.amount}, 0)
       """.stripMargin.update.run.runSync
 
   }

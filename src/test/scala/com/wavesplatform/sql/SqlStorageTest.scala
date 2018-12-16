@@ -95,6 +95,11 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
 
     "genesis block " in {
 
+      val sig   = GenesisTransaction.generateSignature(signerA.toAddress, 300, System.currentTimeMillis())
+      val genTx = GenesisTransaction(signerA.toAddress, 300, System.currentTimeMillis(), ByteStr(sig))
+
+      db.insertGenesisTransaction(genTx, 1)
+
     }
 
   }
