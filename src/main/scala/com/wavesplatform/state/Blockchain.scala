@@ -302,28 +302,34 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   def putData(height: Int, tx: DataTransaction) = {
     import cats._, cats.data._, cats.implicits._
 
-    val sql = """
+    val sql = s"""
          |INSERT INTO data_transactions_data
-         |(position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string)
+         |(height, tx_id, position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string)
          |VALUES
-         |(?, ?, ?, ?, ?, ?, ?)
+         |($height, ?, ?, ?, ?, ?, ?, ?, ?)
          |
        """.stripMargin
 
-    val updateEntries = Update[(Int, DataEntry[_])](sql).updateMany(tx.data.zipWithIndex.map(_.swap))
+    val list: List[(AssetId, Int, DataEntry[_])] = tx.data.zipWithIndex.map {
+      case (e, pos) =>
+        (tx.id(), pos, e)
+    }
+
+    val updateEntries = Update[(ByteStr, Int, DataEntry[_])](sql).updateMany(list)
 
     val update =
       sql"""
         |INSERT INTO data_transactions
-        |(height, tx_type, id, time_stamp, proofs, tx_version, sender, senderPublicKey, fee)
+        |(height, tx_type, id, time_stamp, proofs, tx_version, sender, sender_public_key, fee)
         | VALUES
-        | ($height, ${DataTransaction.typeId}, ${tx.id()}, ${tx.timestamp}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(
+        | ($height, ${DataTransaction.typeId}, ${tx
+             .id()}, ${new java.sql.Timestamp(tx.timestamp)}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(
              tx.sender.publicKey)}, ${tx.fee})
       """.stripMargin.update.run
 
     (for {
-      x <- updateEntries
       y <- update
+      x <- updateEntries
     } yield ()).runSync
   }
 
@@ -921,25 +927,25 @@ object DoobieGetInstances {
     }
   }
 
-  implicit val dataEntryRead: Read[DataEntry[_]] = Read[(String, String, Long, Boolean, String, String)].map {
+  implicit val dataEntryRead: Read[DataEntry[_]] = Read[(String, String, Option[Long], Option[Boolean], Option[String], Option[String])].map {
     case (dataKey, dataType, integer, boolean, binary, string) =>
       dataType match {
-        case "integer" => IntegerDataEntry(dataKey, integer)
-        case "boolean" => BooleanDataEntry(dataKey, boolean)
-        case "binary"  => BinaryDataEntry(dataKey, ByteStr.decodeBase58(binary).get)
-        case "string"  => StringDataEntry(dataKey, string)
+        case "integer" => IntegerDataEntry(dataKey, integer.get)
+        case "boolean" => BooleanDataEntry(dataKey, boolean.get)
+        case "binary"  => BinaryDataEntry(dataKey, ByteStr.decodeBase58(binary.get).get)
+        case "string"  => StringDataEntry(dataKey, string.get)
       }
   }
 
   implicit val dataEntryWrite: Write[DataEntry[_]] = {
-    val nullString  = null.asInstanceOf[String]
-    val nullBoolean = null.asInstanceOf[Boolean]
-    val nullLong    = null.asInstanceOf[Long]
-    Write[(String, String, Long, Boolean, String, String)].contramap {
-      case IntegerDataEntry(key, integer) => (key, "integer", integer, nullBoolean, nullString, nullString)
-      case BooleanDataEntry(key, boolean) => (key, "boolean", nullLong, boolean, nullString, nullString)
-      case BinaryDataEntry(key, binary)   => (key, "binary", nullLong, nullBoolean, binary.toString, nullString)
-      case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, string)
+    val nullString  = Option.empty[String]
+    val nullBoolean = Option.empty[Boolean]
+    val nullLong    = Option.empty[Long]
+    Write[(String, String, Option[Long], Option[Boolean], Option[String], Option[String])].contramap {
+      case IntegerDataEntry(key, integer) => (key, "integer", Some(integer), nullBoolean, nullString, nullString)
+      case BooleanDataEntry(key, boolean) => (key, "boolean", nullLong, Some(boolean), nullString, nullString)
+      case BinaryDataEntry(key, binary)   => (key, "binary", nullLong, nullBoolean, Some(binary.toString), nullString)
+      case StringDataEntry(key, string)   => (key, "string", nullLong, nullBoolean, nullString, Some(string))
     }
   }
 }

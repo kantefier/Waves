@@ -8,8 +8,8 @@ import com.wavesplatform.block.Block
 import com.wavesplatform.crypto.KeyLength
 import com.wavesplatform.lagonaki.mocks.TestBlock
 import com.wavesplatform.settings.TestFunctionalitySettings
-import com.wavesplatform.state.SqlDb
-import com.wavesplatform.transaction.GenesisTransaction
+import com.wavesplatform.state.{BinaryDataEntry, BooleanDataEntry, ByteStr, IntegerDataEntry, SqlDb, StringDataEntry}
+import com.wavesplatform.transaction.{DataTransaction, GenesisTransaction}
 import monix.execution.Scheduler.fixedPool
 import org.scalatest.{FreeSpec, Matchers}
 
@@ -59,4 +59,24 @@ class SqlStorageTest extends FreeSpec with Matchers with BlockGen {
         TestBlock.create(signer, Seq(x), features)
     }
   }
+
+  "data db test" - {
+    implicit val ec = fixedPool("miner-pool", poolSize = 20, reporter = println)
+    val db          = new SqlDb(TestFunctionalitySettings.Enabled)
+
+    "yolo" in {
+      val des = List(
+        IntegerDataEntry("ide", 3),
+        BooleanDataEntry("bde", true),
+        StringDataEntry("sde", "yolo"),
+        BinaryDataEntry("bdes", ByteStr(Array[Byte](4, 2, 0)))
+      )
+
+      val tx = DataTransaction.selfSigned(1, signerA, des, 300, System.currentTimeMillis()).right.get
+
+      db.putData(1, tx)
+
+    }
+  }
+
 }
