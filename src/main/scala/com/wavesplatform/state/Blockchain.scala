@@ -302,7 +302,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   def toTimestamp(ts: Long) = new java.sql.Timestamp(ts)
 
   def putData(height: Int, tx: DataTransaction) = {
-    import cats._, cats.data._, cats.implicits._
+    import cats.implicits._
 
     val sql = s"""
          |INSERT INTO data_transactions_data
@@ -336,7 +336,12 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
-  override def lastBlock: Option[Block] = None
+  override def lastBlock: Option[Block] = {
+    for {
+      currentHeight <- sql"SELECT max(height) FROM blocks".query[Option[Int]].stream.compile.toList.runSync.headOption.flatten
+      blockBytes = sql"SELECT block_bytes FROM blocks WHERE height = $currentHeight".query[String].unique.runSync
+    } yield Base58.decode(blockBytes).flatMap(Block.parseBytes).get
+  }
 
   override def carryFee: Long = {
     for {
@@ -873,8 +878,6 @@ object DoobieGetInstances {
 
   implicit val intArray: Meta[Seq[Int]] =
     Meta[Array[Int]].imap(_.toSeq)(seq => Array.apply(seq: _*))
-
-  implicit val shortArray: Meta[Array[Short]] = Meta[Array[Short]]
 
   implicit val scriptMeta: Meta[Script] =
     Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)
