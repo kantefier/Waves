@@ -3,6 +3,7 @@ package com.wavesplatform.state
 import cats.data.{NonEmptyList, OptionT}
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias, PublicKeyAccount}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.database.Keys
 import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.Transaction.Type
@@ -304,7 +305,16 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .isDefined
   }
 
-  override def assetDescription(id: AssetId): Option[AssetDescription] = ???
+  override def assetDescription(id: AssetId): Option[AssetDescription] = {
+    transactionInfo(id) match {
+      case Some((_, i: IssueTransaction)) =>
+        val ai          = getLastAssetInfo(id).getOrElse(AssetInfo(i.reissuable, i.quantity))
+//        val sponsorship = db.fromHistory(Keys.sponsorshipHistory(assetId), Keys.sponsorship(assetId)).fold(0L)(_.minFee)
+//        val script      = db.fromHistory(Keys.assetScriptHistory(assetId), Keys.assetScript(assetId)).flatten
+        Some(AssetDescription(i.sender, i.name, i.description, i.decimals, ai.isReissuable, ai.volume, None, 0))
+      case _ => None
+    }
+  }
 
   override def resolveAlias(a: Alias): Either[ValidationError, Address] = {
     //TODO: check alias disabled (there's no such table currently, maybe we'll add it as s field to aliases table)
@@ -345,11 +355,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   override def hasAssetScript(id: AssetId): Boolean = assetScript(id).isDefined
 
   override def accountData(acc: Address): AccountDataInfo = {
-    val addressId = sql"SELECT id FROM addresses WHERE address = ${acc.stringRepr}"
-      .query[Long]
-      .option
-      .runSync
-      .getOrElse(throw new RuntimeException("Address not found"))
+    val addressId = getAddressId(acc)
 
     sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
          | FROM data_transactions_data AS dtd,
@@ -365,11 +371,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   override def accountData(acc: Address, key: String): Option[DataEntry[_]] = {
-    val addressId = sql"SELECT id FROM addresses WHERE address = ${acc.stringRepr}"
-      .query[Long]
-      .option
-      .runSync
-      .getOrElse(throw new RuntimeException("Address not found"))
+    val addressId = getAddressId(acc)
 
     sql"""SELECT dtd.data_key, dtd.data_type, dtd.data_value_integer, dtd.data_value_boolean, dtd.data_value_binary, dtd.data_value_string
          | FROM data_transactions_data AS dtd,
@@ -449,6 +451,14 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     *
     * @note Portfolios passed to `pf` only contain Waves and Leasing balances to improve performance */
   override def collectLposPortfolios[A](pf: PartialFunction[(Address, Portfolio), A]): Map[Address, A] = ???
+
+  private def getAddressId(address: Address): Long = {
+    sql"SELECT id FROM addresses WHERE address = ${address.stringRepr}"
+      .query[Long]
+      .option
+      .runSync
+      .getOrElse(throw new RuntimeException("Address not found"))
+  }
 
   private def getExistingAddresses(addresses: Iterable[Address]): List[Address] = {
     val addressesString = addresses.map(_.toString).mkString("'", "', '", "'")
@@ -565,7 +575,7 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     val newInsertedAddress = insertAdresses(newAddresses)
 
     def addressId(address: Address): Long =
-      newInsertedAddress.find(p => p._2 == address).map(_._1).getOrElse(throw new RuntimeException("Id wasn't found"))
+      newInsertedAddress.find(p => p._2 == address).map(_._1).getOrElse(getAddressId(address))
 
     val wavesBalances = Map.newBuilder[Long, Long]
     val assetBalances = Map.newBuilder[Long, Map[ByteStr, Long]]
