@@ -347,7 +347,12 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
-  override def lastBlock: Option[Block] = None
+  override def lastBlock: Option[Block] = {
+    for {
+      currentHeight <- sql"SELECT max(height) FROM blocks".query[Option[Int]].stream.compile.toList.runSync.headOption.flatten
+      blockBytes = sql"SELECT block_bytes FROM blocks WHERE height = $currentHeight".query[String].unique.runSync
+    } yield Base58.decode(blockBytes).flatMap(Block.parseBytes).get
+  }
 
   override def carryFee: Long = {
     for {
@@ -426,16 +431,31 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .option
       .map(_.getOrElse(LeaseBalance(0L, 0L)))
 
-  override def portfolio(a: Address): Portfolio = {
+  def currentAssetBalances(addressId: BigInt): ConnectionIO[Map[AssetId, Long]] =
+    sql"""SELECT t1.asset_id, t1.amount
+         |FROM asset_balances_test t1
+         |INNER JOIN (
+         |  SELECT address_id, asset_id, max(height) as maxheight
+         |  FROM asset_balances_test
+         |  WHERE address_id=$addressId
+         |  GROUP BY address_id, asset_id) t2
+         |    ON t1.address_id=t2.address_id
+         |    AND t1.asset_id=t2.asset_id
+         |    AND t1.height=t2.maxheight""".stripMargin
+      .query[(AssetId, Long)]
+      .stream
+      .compile
+      .toList
+      .map(_.toMap)
 
-    /**
-      * get addressId
-      * get current wavesBalance
-      * get current leaseBalance
-      *
-      */
-    ???
-  }
+  override def portfolio(a: Address): Portfolio = {
+    for {
+      addressId        <- OptionT(addressIdForAddress(a))
+      wavesBalance     <- OptionT[ConnectionIO, Long](currentWavesBalanceIo(addressId).map(_.some))
+      leaseBalance     <- OptionT[ConnectionIO, LeaseBalance](currentLeaseBalanceIo(addressId).map(_.some))
+      assetToAmountMap <- OptionT[ConnectionIO, Map[AssetId, Long]](currentAssetBalances(addressId).map(_.some))
+    } yield Portfolio(wavesBalance, leaseBalance, assetToAmountMap)
+  }.value.runSync.getOrElse(Portfolio.empty)
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
@@ -892,8 +912,6 @@ object DoobieGetInstances {
 
   implicit val intArray: Meta[Seq[Int]] =
     Meta[Array[Int]].imap(_.toSeq)(seq => Array.apply(seq: _*))
-
-  implicit val shortArray: Meta[Array[Short]] = Meta[Array[Short]]
 
   implicit val scriptMeta: Meta[Script] =
     Meta[String].imap(s => Script.fromBase64String(s).right.get)(_.text)
