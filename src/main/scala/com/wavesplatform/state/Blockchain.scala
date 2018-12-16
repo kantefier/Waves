@@ -766,10 +766,18 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     insertBlock(block, newHeight, carryFee)
 
     // TODO: insert transactions
-    //    val newTransactions = Map.newBuilder[ByteStr, (Transaction, Set[Long])]
-    //    for ((id, (_, tx, addresses)) <- diff.transactions) {
-    //      newTransactions += id -> ((tx, addresses.map(addressId)))
-    //    }
+    val newTransactions = Map.newBuilder[ByteStr, (Transaction, Set[Long])]
+    for ((id, (_, tx, addresses)) <- diff.transactions) {
+      tx match {
+        case t: TransferTransaction =>
+          insertTransfer(t, height)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
+        case d: DataTransaction =>
+          putData(height, d)
+          newTransactions += id -> ((tx, addresses.map(addressId)))
+        case _ => println("oops")
+      }
+    }
 
     for ((addressId, balance) <- wavesBalances.result()) {
       insertWavesBalance(addressId, newHeight, balance)
