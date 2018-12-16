@@ -414,16 +414,31 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
       .option
       .map(_.getOrElse(LeaseBalance(0L, 0L)))
 
-  override def portfolio(a: Address): Portfolio = {
+  def currentAssetBalances(addressId: BigInt): ConnectionIO[Map[AssetId, Long]] =
+    sql"""SELECT t1.asset_id, t1.amount
+         |FROM asset_balances_test t1
+         |INNER JOIN (
+         |  SELECT address_id, asset_id, max(height) as maxheight
+         |  FROM asset_balances_test
+         |  WHERE address_id=$addressId
+         |  GROUP BY address_id, asset_id) t2
+         |    ON t1.address_id=t2.address_id
+         |    AND t1.asset_id=t2.asset_id
+         |    AND t1.height=t2.maxheight""".stripMargin
+      .query[(AssetId, Long)]
+      .stream
+      .compile
+      .toList
+      .map(_.toMap)
 
-    /**
-      * get addressId
-      * get current wavesBalance
-      * get current leaseBalance
-      *
-      */
-    ???
-  }
+  override def portfolio(a: Address): Portfolio = {
+    for {
+      addressId        <- OptionT(addressIdForAddress(a))
+      wavesBalance     <- OptionT[ConnectionIO, Long](currentWavesBalanceIo(addressId).map(_.some))
+      leaseBalance     <- OptionT[ConnectionIO, LeaseBalance](currentLeaseBalanceIo(addressId).map(_.some))
+      assetToAmountMap <- OptionT[ConnectionIO, Map[AssetId, Long]](currentAssetBalances(addressId).map(_.some))
+    } yield Portfolio(wavesBalance, leaseBalance, assetToAmountMap)
+  }.value.runSync.getOrElse(Portfolio.empty)
 
   override def transactionInfo(id: ByteStr): Option[(Int, Transaction)] = ???
 
