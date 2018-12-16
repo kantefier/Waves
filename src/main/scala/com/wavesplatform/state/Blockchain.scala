@@ -299,6 +299,34 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
     }
   }
 
+  def putData(height: Int, tx: DataTransaction) = {
+    import cats._, cats.data._, cats.implicits._
+
+    val sql = """
+         |INSERT INTO data_transactions_data
+         |(position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string)
+         |VALUES
+         |(?, ?, ?, ?, ?, ?, ?)
+         |
+       """.stripMargin
+
+    val updateEntries = Update[(Int, DataEntry[_])](sql).updateMany(tx.data.zipWithIndex.map(_.swap))
+
+    val update =
+      sql"""
+        |INSERT INTO data_transactions
+        |(height, tx_type, id, time_stamp, proofs, tx_version, sender, senderPublicKey, fee)
+        | VALUES
+        | ($height, ${DataTransaction.typeId}, ${tx.id()}, ${tx.timestamp}, ${tx.proofs}, ${tx.version}, ${tx.sender.toAddress}, ${Base58.encode(
+             tx.sender.publicKey)}, ${tx.fee})
+      """.stripMargin.update.run
+
+    (for {
+      x <- updateEntries
+      y <- update
+    } yield ()).runSync
+  }
+
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
   override def lastBlock: Option[Block] = ???
