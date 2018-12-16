@@ -275,14 +275,29 @@ class SqlDb(fs: FunctionalitySettings)(implicit scheduler: Scheduler) extends Bl
   }
 
   def datadataTxFr(txId: ByteStr) =
-    fr"""
-        |SELECT data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string
+    sql"""
+        |SELECT position_in_tx, data_key, data_type, data_value_integer, data_value_boolean, data_value_binary, data_value_string
         |FROM data_transactions_data
         |WHERE tx_id = $txId
-        |ORDER BY position_in_tx ASC
       """.stripMargin
+      .query[(Int, DataEntry[_])]
 
-  def dataTx = {}
+  def dataTx(height: Int) = {
+    val q = fr"""SELECT id, 1, sender, fee, time_stamp AS timestamp, proofs
+        |FROM data_transactions
+        |WHERE height = $height"""
+      .query[(ByteStr, Byte, PublicKeyAccount, Long, Long, Proofs)]
+
+    for {
+      list <- q.stream.compile.toList
+    } yield {
+      list.map {
+        case (id, version, sender, fee, timestamp, proofs) =>
+          val des = datadataTxFr(id).stream.compile.toList.runSync.sortWith { case (f, s) => f._1 < s._1 }
+          DataTransaction.create(version, sender, des.map(_._2), fee, timestamp, proofs)
+      }
+    }
+  }
 
   override def blockHeaderAndSize(blockId: AssetId): Option[(BlockHeader, Int)] = ???
 
