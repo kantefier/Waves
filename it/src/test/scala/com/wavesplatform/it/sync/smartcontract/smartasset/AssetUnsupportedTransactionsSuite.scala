@@ -1,5 +1,6 @@
 package com.wavesplatform.it.sync.smartcontract.smartasset
 
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.sync.{someAssetAmount, _}
 import com.wavesplatform.it.transactions.BaseTransactionSuite

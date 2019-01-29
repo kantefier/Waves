@@ -4,6 +4,7 @@ import cats.implicits._
 import cats.kernel.Monoid
 import com.wavesplatform.account.{Address, Alias}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.state._
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.{AliasDoesNotExist, AliasIsDisabled}
@@ -20,6 +21,10 @@ class CompositeBlockchain(inner: Blockchain, maybeDiff: => Option[Diff], carry: 
 
   override def balance(address: Address, assetId: Option[AssetId]): Long =
     inner.balance(address, assetId) + diff.portfolios.getOrElse(address, Portfolio.empty).balanceOf(assetId)
+
+  override def leaseBalance(address: Address): LeaseBalance = {
+    cats.Monoid.combine(inner.leaseBalance(address), diff.portfolios.getOrElse(address, Portfolio.empty).lease)
+  }
 
   override def assetScript(id: ByteStr): Option[Script] = maybeDiff.flatMap(_.assetScripts.get(id)).getOrElse(inner.assetScript(id))
   override def hasAssetScript(id: ByteStr) = maybeDiff.flatMap(_.assetScripts.get(id)) match {
@@ -161,26 +166,18 @@ class CompositeBlockchain(inner: Blockchain, maybeDiff: => Option[Diff], carry: 
       if pred(p)
     } yield address -> f(address)
 
-  override def assetDistribution(assetId: ByteStr): Map[Address, Long] = {
+  override def assetDistribution(assetId: ByteStr): AssetDistribution = {
     val fromInner = inner.assetDistribution(assetId)
-    val fromDiff  = changedBalances(_.assets.getOrElse(assetId, 0L) != 0, portfolio(_).assets.getOrElse(assetId, 0L))
+    val fromDiff  = AssetDistribution(changedBalances(_.assets.getOrElse(assetId, 0L) != 0, portfolio(_).assets.getOrElse(assetId, 0L)))
 
-    fromInner ++ fromDiff
+    fromInner |+| fromDiff
   }
 
   override def assetDistributionAtHeight(assetId: AssetId,
                                          height: Int,
                                          count: Int,
-                                         fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]] = {
-    val innerDistribution = inner.assetDistributionAtHeight(assetId, height, count, fromAddress)
-
-    if (height < this.height) {
-      innerDistribution
-    } else {
-      val distributionFromDiff =
-        changedBalances(_.assets.getOrElse(assetId, 0) != 0, portfolio(_).assets.getOrElse(assetId, 0))
-      innerDistribution.map(_ ++ distributionFromDiff)
-    }
+                                         fromAddress: Option[Address]): Either[ValidationError, AssetDistributionPage] = {
+    inner.assetDistributionAtHeight(assetId, height, count, fromAddress)
   }
 
   override def wavesDistribution(height: Int): Map[Address, Long] = {

@@ -3,17 +3,19 @@ package com.wavesplatform.state.diffs.smart.scenarios
 import java.nio.charset.StandardCharsets
 
 import com.wavesplatform.account.AddressScheme
-import com.wavesplatform.lang.{Testing, Global}
-import com.wavesplatform.lang.ScriptVersion.Versions.V1
-import com.wavesplatform.lang.v1.compiler.CompilerV1
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
+import com.wavesplatform.lang.Version.ExprV1
+import com.wavesplatform.lang.v1.compiler.ExpressionCompilerV1
 import com.wavesplatform.lang.v1.compiler.Terms.EVALUATED
 import com.wavesplatform.lang.v1.evaluator.EvaluatorV1
 import com.wavesplatform.lang.v1.parser.Parser
+import com.wavesplatform.lang.{Global, Testing}
 import com.wavesplatform.state._
 import com.wavesplatform.state.diffs._
 import com.wavesplatform.state.diffs.smart._
 import com.wavesplatform.transaction.assets.IssueTransactionV2
-import com.wavesplatform.transaction.smart.script.v1.ScriptV1
+import com.wavesplatform.transaction.smart.script.v1.ExprScript
 import com.wavesplatform.transaction.transfer._
 import com.wavesplatform.transaction.{DataTransaction, GenesisTransaction}
 import com.wavesplatform.utils._
@@ -59,9 +61,9 @@ class NotaryControlledTransferScenarioTest extends PropSpec with PropertyChecks 
                     | }
         """.stripMargin
 
-      untypedScript = Parser(assetScript).get.value
+      untypedScript = Parser.parseScript(assetScript).get.value
 
-      typedScript = ScriptV1(CompilerV1(compilerContext(V1, isAssetScript = false), untypedScript).explicitGet()._1).explicitGet()
+      typedScript = ExprScript(ExpressionCompilerV1(compilerContext(ExprV1, isAssetScript = false), untypedScript).explicitGet()._1).explicitGet()
 
       issueTransaction = IssueTransactionV2
         .selfSigned(
@@ -110,9 +112,9 @@ class NotaryControlledTransferScenarioTest extends PropSpec with PropertyChecks 
        transferFromAToB)
 
   private def eval(code: String) = {
-    val untyped = Parser(code).get.value
-    val typed   = CompilerV1(compilerContext(V1, isAssetScript = false), untyped).map(_._1)
-    typed.flatMap(EvaluatorV1[EVALUATED](dummyEvalContext(V1), _))
+    val untyped = Parser.parseScript(code).get.value
+    val typed   = ExpressionCompilerV1(compilerContext(ExprV1, isAssetScript = false), untyped).map(_._1)
+    typed.flatMap(EvaluatorV1[EVALUATED](dummyEvalContext(ExprV1), _))
   }
 
   property("Script toBase58String") {

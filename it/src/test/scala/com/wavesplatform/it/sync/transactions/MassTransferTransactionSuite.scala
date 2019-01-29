@@ -1,18 +1,17 @@
 package com.wavesplatform.it.sync.transactions
 
+import com.wavesplatform.account.Alias
+import com.wavesplatform.api.http.assets.{MassTransferRequest, SignedMassTransferRequest}
+import com.wavesplatform.common.utils.{Base58, EitherExt2}
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.sync._
 import com.wavesplatform.it.transactions.BaseTransactionSuite
 import com.wavesplatform.it.util._
-import com.wavesplatform.state.EitherExt2
-import com.wavesplatform.utils.Base58
-import org.scalatest.CancelAfterFailure
-import play.api.libs.json._
-import com.wavesplatform.account.Alias
-import com.wavesplatform.api.http.assets.{MassTransferRequest, SignedMassTransferRequest}
 import com.wavesplatform.transaction.transfer.MassTransferTransaction.{MaxTransferCount, Transfer}
 import com.wavesplatform.transaction.transfer.TransferTransaction.MaxAttachmentSize
 import com.wavesplatform.transaction.transfer._
+import org.scalatest.CancelAfterFailure
+import play.api.libs.json._
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -126,7 +125,7 @@ class MassTransferTransactionSuite extends BaseTransactionSuite with CancelAfter
 
     val (balance1, eff1) = notMiner.accountBalances(firstAddress)
     val invalidTransfers = Seq(
-      (request(timestamp = System.currentTimeMillis + 1.day.toMillis), "Transaction .* is from far future"),
+      (request(timestamp = System.currentTimeMillis + 1.day.toMillis), "Transaction timestamp .* is more than .*ms in the future"),
       (request(transfers = List.fill(MaxTransferCount + 1)(Transfer(secondAddress, 1)), fee = calcMassTransferFee(MaxTransferCount + 1)),
        s"Number of transfers ${MaxTransferCount + 1} is greater than 100"),
       (request(transfers = List(Transfer(secondAddress, -1))), "One of the transfers has negative amount"),
@@ -267,7 +266,7 @@ class MassTransferTransactionSuite extends BaseTransactionSuite with CancelAfter
     createAliasTxs.foreach(sender.waitForTransaction(_))
 
     val transfers = aliases.map { alias =>
-      Transfer(Alias.buildWithCurrentNetworkByte(alias).explicitGet().stringRepr, 2.waves)
+      Transfer(Alias.buildWithCurrentChainId(alias).explicitGet().stringRepr, 2.waves)
     }
     val txId = sender.massTransfer(firstAddress, transfers, 300000).id
     nodes.waitForHeightAriseAndTxPresent(txId)

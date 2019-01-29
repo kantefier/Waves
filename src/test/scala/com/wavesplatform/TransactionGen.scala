@@ -3,9 +3,15 @@ package com.wavesplatform
 import cats.syntax.semigroup._
 import com.wavesplatform.account.PublicKeyAccount._
 import com.wavesplatform.account._
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.lang.Global
-import com.wavesplatform.lang.v1.compiler.CompilerV1
+import com.wavesplatform.lang.Version._
+import com.wavesplatform.lang.contract.Contract
+import com.wavesplatform.lang.contract.Contract.{CallableAnnotation, ContractFunction}
+import com.wavesplatform.lang.v1.FunctionHeader
 import com.wavesplatform.lang.v1.compiler.Terms._
+import com.wavesplatform.lang.v1.compiler.{ExpressionCompilerV1, Terms}
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.{CryptoContext, PureContext}
 import com.wavesplatform.lang.v1.testing.ScriptGen
 import com.wavesplatform.settings.Constants
@@ -15,13 +21,11 @@ import com.wavesplatform.transaction._
 import com.wavesplatform.transaction.assets._
 import com.wavesplatform.transaction.assets.exchange._
 import com.wavesplatform.transaction.lease._
-import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.smart.script.Script
-import com.wavesplatform.transaction.smart.script.v1.ScriptV1
-import com.wavesplatform.transaction.transfer.MassTransferTransaction.ParsedTransfer
+import com.wavesplatform.transaction.smart.script.v1.{ExprScript, ContractScript}
+import com.wavesplatform.transaction.smart.{ContractInvocationTransaction, SetScriptTransaction}
+import com.wavesplatform.transaction.transfer.MassTransferTransaction.{MaxTransferCount, ParsedTransfer}
 import com.wavesplatform.transaction.transfer._
-import MassTransferTransaction.MaxTransferCount
-import com.wavesplatform.lang.ScriptVersion.Versions.V1
 import org.scalacheck.Gen.{alphaLowerChar, alphaUpperChar, frequency, numChar}
 import org.scalacheck.{Arbitrary, Gen}
 import org.scalatest.Suite
@@ -73,7 +77,7 @@ trait TransactionGenBase extends ScriptGen with NTPTime { _: Suite =>
 
   val aliasGen: Gen[Alias] = for {
     str <- validAliasStringGen
-  } yield Alias.buildWithCurrentNetworkByte(str.mkString).explicitGet()
+  } yield Alias.buildWithCurrentChainId(str.mkString).explicitGet()
 
   val invalidAliasStringGen: Gen[String] = for {
     length     <- Gen.chooseNum(Alias.MinLength, Alias.MaxLength)
@@ -109,9 +113,13 @@ trait TransactionGenBase extends ScriptGen with NTPTime { _: Suite =>
   val scriptGen = BOOLgen(100).map {
     case (expr, _) =>
       val typed =
-        CompilerV1(PureContext.build(V1).compilerContext |+| CryptoContext.compilerContext(Global), expr).explicitGet()
-      ScriptV1(typed._1).explicitGet()
+        ExpressionCompilerV1(PureContext.build(ExprV1).compilerContext |+| CryptoContext.compilerContext(Global), expr).explicitGet()
+      ExprScript(typed._1).explicitGet()
   }
+
+  val contractGen = Gen.const(
+    ContractScript(ContractV,
+                   Contract(List.empty, List(ContractFunction(CallableAnnotation("sender"), Terms.FUNC("foo", List("a"), Terms.REF("a")))), None)))
 
   val setAssetScriptTransactionGen: Gen[(Seq[Transaction], SetAssetScriptTransaction)] = for {
     version                                                                  <- Gen.oneOf(SetScriptTransaction.supportedVersions.toSeq)
@@ -119,7 +127,7 @@ trait TransactionGenBase extends ScriptGen with NTPTime { _: Suite =>
     fee                                                                      <- smallFeeGen
     timestamp                                                                <- timestampGen
     proofs                                                                   <- proofsGen
-    script                                                                   <- Gen.option(scriptGen)
+    script                                                                   <- Gen.option(Gen.oneOf(scriptGen, contractGen))
     issue = IssueTransactionV2
       .selfSigned(2: Byte,
                   AddressScheme.current.chainId,
@@ -521,6 +529,29 @@ trait TransactionGenBase extends ScriptGen with NTPTime { _: Suite =>
     tx
   }
 
+  val argGen: Gen[EXPR] = Gen.const(CONST_LONG(11))
+
+  val funcCallGen = for {
+    functionName <- genBoundedString(1, 32).map(_.toString)
+    amt          <- Gen.choose(0, 10)
+    args         <- Gen.listOfN(amt, argGen)
+
+  } yield FUNCTION_CALL(FunctionHeader.User(functionName), args)
+
+  val contractInvokationGen = for {
+    sender          <- accountGen
+    contractAddress <- accountGen
+    version         <- Gen.oneOf(ContractInvocationTransaction.supportedVersions.toSeq)
+    fc              <- funcCallGen
+    po <- Gen.option(for {
+      asset <- Gen.option(bytes32gen.map(ByteStr(_)))
+      amt   <- positiveLongGen
+    } yield ContractInvocationTransaction.Payment(amt, asset))
+    chainId = AddressScheme.current.chainId
+    fee       <- smallFeeGen
+    timestamp <- timestampGen
+  } yield ContractInvocationTransaction.selfSigned(version, sender, contractAddress, fc, po, fee, timestamp).explicitGet()
+
   val priceGen: Gen[Long]            = Gen.choose(1, 3 * 100000L * 100000000L)
   val matcherAmountGen: Gen[Long]    = Gen.choose(1, 3 * 100000L * 100000000L)
   val matcherFeeAmountGen: Gen[Long] = Gen.choose(1, 3 * 100000L * 100000000L)
@@ -738,7 +769,7 @@ trait TransactionGenBase extends ScriptGen with NTPTime { _: Suite =>
       recipient <- accountGen
       ts        <- positiveIntGen
       genesis = GenesisTransaction.create(master, ENOUGH_AMT, ts).explicitGet()
-      setScript <- selfSignedSetScriptTransactionGenP(master, ScriptV1(typed).explicitGet())
+      setScript <- selfSignedSetScriptTransactionGenP(master, ExprScript(typed).explicitGet())
       transfer  <- transferGeneratorPV2(ts, master, recipient.toAddress, ENOUGH_AMT / 2)
       fee       <- smallFeeGen
       lease = LeaseTransactionV2.selfSigned(LeaseTransactionV2.supportedVersions.head, master, ENOUGH_AMT / 2, fee, ts, recipient).explicitGet()

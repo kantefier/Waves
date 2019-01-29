@@ -12,6 +12,7 @@ import com.wavesplatform.block.Block
 import com.wavesplatform.transaction.ValidationError.{BlockAppendError, BlockFromFuture, GenericError}
 import com.wavesplatform.transaction._
 import cats.implicits._
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.utils.{ScorexLogging, Time}
 
 import scala.util.{Left, Right}
@@ -53,6 +54,19 @@ package object appender extends ScorexLogging {
                                     utxStorage: UtxPool,
                                     pos: PoSSelector,
                                     time: Time,
+                                    settings: WavesSettings,
+                                    verify: Boolean)(block: Block): Either[ValidationError, Option[Int]] = {
+    val append =
+      if (verify) appendBlock(checkpoint, blockchainUpdater, utxStorage, pos, time, settings) _
+      else appendBlock(blockchainUpdater, utxStorage, verify = false) _
+    append(block)
+  }
+
+  private[appender] def appendBlock(checkpoint: CheckpointService,
+                                    blockchainUpdater: BlockchainUpdater with Blockchain,
+                                    utxStorage: UtxPool,
+                                    pos: PoSSelector,
+                                    time: Time,
                                     settings: WavesSettings)(block: Block): Either[ValidationError, Option[Int]] =
     for {
       _ <- Either.cond(
@@ -77,14 +91,17 @@ package object appender extends ScorexLogging {
           s"generator's effective balance $balance is less that required for generation"
         )
       }
-      baseHeight = blockchainUpdater.height
-      maybeDiscardedTxs <- blockchainUpdater.processBlock(block)
-    } yield {
+      baseHeight <- appendBlock(blockchainUpdater, utxStorage, verify = true)(block)
+    } yield baseHeight
+
+  private[appender] def appendBlock(blockchainUpdater: BlockchainUpdater with Blockchain, utxStorage: UtxPool, verify: Boolean)(
+      block: Block): Either[ValidationError, Option[Int]] =
+    blockchainUpdater.processBlock(block, verify).map { maybeDiscardedTxs =>
       utxStorage.removeAll(block.transactionData)
       utxStorage.batched { ops =>
         maybeDiscardedTxs.toSeq.flatten.foreach(ops.putIfNew)
       }
-      maybeDiscardedTxs.map(_ => baseHeight)
+      maybeDiscardedTxs.map(_ => blockchainUpdater.height)
     }
 
   private def blockConsensusValidation(blockchain: Blockchain, settings: WavesSettings, pos: PoSSelector, currentTs: Long, block: Block)(

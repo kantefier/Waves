@@ -1,14 +1,13 @@
 package com.wavesplatform.transaction
-
-import com.wavesplatform.state.ByteStr
 import monix.reactive.Observable
 import com.wavesplatform.block.Block.BlockId
 import com.wavesplatform.block.{Block, MicroBlock}
+import com.wavesplatform.common.state.ByteStr
 
 trait BlockchainUpdater {
-  def processBlock(block: Block): Either[ValidationError, Option[DiscardedTransactions]]
+  def processBlock(block: Block, verify: Boolean = true): Either[ValidationError, Option[DiscardedTransactions]]
 
-  def processMicroBlock(microBlock: MicroBlock): Either[ValidationError, Unit]
+  def processMicroBlock(microBlock: MicroBlock, verify: Boolean = true): Either[ValidationError, Unit]
 
   def removeAfter(blockId: ByteStr): Either[ValidationError, DiscardedBlocks]
 

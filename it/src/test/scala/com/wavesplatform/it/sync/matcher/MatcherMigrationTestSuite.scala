@@ -1,12 +1,12 @@
 package com.wavesplatform.it.sync.matcher
 
 import com.typesafe.config.Config
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.api.SyncMatcherHttpApi._
 import com.wavesplatform.it.matcher.MatcherSuiteBase
 import com.wavesplatform.it.sync._
 import com.wavesplatform.it.sync.matcher.config.MatcherDefaultConfig._
-import com.wavesplatform.state.ByteStr
 import com.wavesplatform.transaction.assets.exchange.{AssetPair, OrderType}
 
 import scala.concurrent.duration._
@@ -18,7 +18,14 @@ class MatcherMigrationTestSuite extends MatcherSuiteBase {
     // Alice issues new asset
     val aliceAsset =
       aliceNode
-        .issue(aliceAcc.address, "DisconnectCoin", "Alice's coin for disconnect tests", 1000 * someAssetAmount, 8, reissuable = false, issueFee, 2)
+        .issue(aliceAcc.address,
+               "DisconnectCoin",
+               "Alice's coin for disconnect tests",
+               1000 * someAssetAmount,
+               8,
+               reissuable = false,
+               smartIssueFee,
+               2)
         .id
     nodes.waitForHeightAriseAndTxPresent(aliceAsset)
 

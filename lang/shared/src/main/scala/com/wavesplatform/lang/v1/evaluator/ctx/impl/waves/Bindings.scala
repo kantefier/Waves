@@ -1,10 +1,10 @@
 package com.wavesplatform.lang.v1.evaluator.ctx.impl.waves
 
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.lang.v1.compiler.Terms._
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.converters
 import com.wavesplatform.lang.v1.traits.domain.Tx._
 import com.wavesplatform.lang.v1.traits.domain._
-import scodec.bits.ByteVector
 
 object Bindings {
 
@@ -21,8 +21,8 @@ object Bindings {
     "version"   -> tx.version,
   )
 
-  private def proofsPart(existingProofs: IndexedSeq[ByteVector]) =
-    "proofs" -> ARR((existingProofs ++ Seq.fill(8 - existingProofs.size)(ByteVector.empty)).map(CONST_BYTEVECTOR).toIndexedSeq)
+  private def proofsPart(existingProofs: IndexedSeq[ByteStr]) =
+    "proofs" -> ARR((existingProofs ++ Seq.fill(8 - existingProofs.size)(ByteStr.empty)).map(CONST_BYTESTR).toIndexedSeq)
 
   private def provenTxPart(tx: Proven, proofsEnabled: Boolean): Map[String, EVALUATED] = {
     val commonPart = combine(Map(
@@ -56,6 +56,22 @@ object Bindings {
       case OrdType.Sell => sellType
     }).typeRef, Map.empty)
 
+  def buildPayment(mpmt: Option[Tx.Pmt]): CaseObj = mpmt match {
+    case None => com.wavesplatform.lang.v1.evaluator.ctx.impl.unit
+    case Some(pmt) =>
+      CaseObj(
+        paymentType.typeRef,
+        Map(
+          "amount" -> CONST_LONG(pmt.amount),
+          "asset" -> (pmt.asset match {
+            case None                 => com.wavesplatform.lang.v1.evaluator.ctx.impl.unit
+            case Some(asset: ByteStr) => CONST_BYTESTR(asset)
+          })
+        )
+      )
+
+  }
+
   def orderObject(ord: Ord, proofsEnabled: Boolean): CaseObj =
     CaseObj(
       buildOrderType(proofsEnabled).typeRef,
@@ -73,6 +89,16 @@ object Bindings {
         "matcherFee"       -> ord.matcherFee,
         "bodyBytes"        -> ord.bodyBytes,
         proofsPart(ord.proofs)
+      )
+    )
+
+  def buildInvocation(caller: Recipient.Address, payment: Option[Pmt], contractAddress: Recipient.Address) =
+    CaseObj(
+      invocationType.typeRef,
+      Map(
+        "caller"          -> mapRecipient(caller)._2,
+        "contractAddress" -> mapRecipient(contractAddress)._2,
+        "payment"         -> buildPayment(payment)
       )
     )
 
@@ -132,6 +158,16 @@ object Bindings {
                   ),
                   provenTxPart(p, proofsEnabled))
         )
+      case CI(p, address, maybePayment) =>
+        CaseObj(
+          buildContractInvokationTransactionType(proofsEnabled).typeRef,
+          combine(Map(
+                    "contractAddress" -> mapRecipient(address)._2,
+                    "paymentInfo"     -> buildPayment(maybePayment)
+                  ),
+                  provenTxPart(p, proofsEnabled))
+        )
+
       case Lease(p, amount, recipient) =>
         CaseObj(
           buildLeaseTransactionType(proofsEnabled).typeRef,
@@ -180,11 +216,11 @@ object Bindings {
         )
       case Data(p, data) =>
         def mapValue(e: Any): EVALUATED = e match {
-          case s: String     => c(s)
-          case s: Boolean    => c(s)
-          case s: Long       => c(s)
-          case s: ByteVector => c(s)
-          case _             => ???
+          case s: String  => c(s)
+          case s: Boolean => c(s)
+          case s: Long    => c(s)
+          case s: ByteStr => c(s)
+          case _          => ???
         }
 
         CaseObj(

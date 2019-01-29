@@ -38,7 +38,7 @@ case class AliasApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
       new ApiImplicitParam(name = "alias", value = "Alias", required = true, dataType = "string", paramType = "path")
     ))
   def addressOfAlias: Route = (get & path("by-alias" / Segment)) { aliasName =>
-    val result = Alias.buildWithCurrentNetworkByte(aliasName) match {
+    val result = Alias.buildWithCurrentChainId(aliasName) match {
       case Right(alias) =>
         blockchain.resolveAlias(alias) match {
           case Right(addr) => Right(Address(addr.stringRepr))
@@ -53,7 +53,7 @@ case class AliasApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPool
   @ApiOperation(value = "Aliases by address", notes = "Returns a collection of aliases associated with an address", httpMethod = "GET")
   @ApiImplicitParams(
     Array(
-      new ApiImplicitParam(name = "address", value = "3Mx2afTZ2KbRrLNbytyzTtXukZvqEB8SkW7", required = true, dataType = "string", paramType = "path")
+      new ApiImplicitParam(name = "address", value = "Address", required = true, dataType = "string", paramType = "path")
     ))
   def aliasOfAddress: Route = (get & path("by-address" / Segment)) { addressString =>
     val result: Either[ApiError, Seq[String]] = com.wavesplatform.account.Address

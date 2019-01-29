@@ -4,6 +4,8 @@ import com.google.common.base.Charsets.UTF_8
 import com.google.common.primitives.{Ints, Longs}
 import com.wavesplatform.account.{Address, Alias}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.state._
 import com.wavesplatform.transaction.Transaction
 import com.wavesplatform.transaction.smart.script.{Script, ScriptReader}
@@ -117,4 +119,8 @@ object Keys {
     Key.opt("asset-script", hBytes(47, height, assetId.arr), (_ => ()), (_ => Array[Byte]()))
 
   val safeRollbackHeight: Key[Int] = intKey("safe-rollback-height", 48)
+
+  def changedDataKeys(height: Int, addressId: BigInt): Key[Seq[String]] =
+    Key("changed-data-keys", hAddr(49, height, addressId), readStrings, writeStrings)
+
 }

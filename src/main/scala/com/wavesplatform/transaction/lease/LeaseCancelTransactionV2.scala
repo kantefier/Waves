@@ -1,12 +1,13 @@
 package com.wavesplatform.transaction.lease
 
 import com.google.common.primitives.Bytes
-import com.wavesplatform.crypto
-import com.wavesplatform.state._
-import monix.eval.Coeval
 import com.wavesplatform.account.{AddressScheme, PrivateKeyAccount, PublicKeyAccount}
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
+import com.wavesplatform.crypto
 import com.wavesplatform.transaction.ValidationError.{GenericError, UnsupportedVersion}
 import com.wavesplatform.transaction._
+import monix.eval.Coeval
 
 import scala.util.{Failure, Success, Try}
 
@@ -36,7 +37,7 @@ object LeaseCancelTransactionV2 extends TransactionParserFor[LeaseCancelTransact
   override val typeId: Byte = LeaseCancelTransaction.typeId
 
   override def supportedVersions: Set[Byte] = Set(2)
-  private def networkByte                   = AddressScheme.current.chainId
+  private def currentChainId                = AddressScheme.current.chainId
 
   override protected def parseTail(version: Byte, bytes: Array[Byte]): Try[TransactionT] =
     Try {
@@ -57,7 +58,7 @@ object LeaseCancelTransactionV2 extends TransactionParserFor[LeaseCancelTransact
              proofs: Proofs): Either[ValidationError, TransactionT] =
     for {
       _ <- Either.cond(supportedVersions.contains(version), (), UnsupportedVersion(version))
-      _ <- Either.cond(chainId == networkByte, (), GenericError(s"Wrong chainId actual: ${chainId.toInt}, expected: $networkByte"))
+      _ <- Either.cond(chainId == currentChainId, (), GenericError(s"Wrong chainId actual: ${chainId.toInt}, expected: $currentChainId"))
       _ <- LeaseCancelTransaction.validateLeaseCancelParams(leaseId, fee)
     } yield LeaseCancelTransactionV2(version, chainId, sender, leaseId, fee, timestamp, proofs)
 

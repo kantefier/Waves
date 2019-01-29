@@ -4,7 +4,7 @@ import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.{Route, StandardRoute}
 import com.wavesplatform.network._
 import com.wavesplatform.settings.RestAPISettings
-import com.wavesplatform.state.{Blockchain, ByteStr}
+import com.wavesplatform.state.Blockchain
 import io.netty.channel.group.ChannelGroup
 import io.swagger.annotations._
 import javax.ws.rs.Path
@@ -12,10 +12,10 @@ import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 import play.api.libs.json._
 import com.wavesplatform.block.BlockHeader
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.transaction._
 
 import scala.concurrent._
-import scala.util.Try
 
 @Path("/blocks")
 @Api(value = "/blocks")
@@ -92,14 +92,12 @@ case class BlocksApiRoute(settings: RestAPISettings,
     ))
   def delay: Route = (path("delay" / Segment / IntNumber) & get) { (encodedSignature, count) =>
     withBlock(blockchain, encodedSignature) { block =>
-      val averageDelay = Try {
-        (block.timestamp - blockchain.parent(block, count).get.timestamp) / count
-      }
-
-      complete(
-        averageDelay
-          .map(d => Json.obj("delay" -> d))
-          .getOrElse[JsObject](Json.obj("status" -> "error", "details" -> "Internal error")))
+      if (count <= 0) complete(CustomValidationError("Block count should be positive"))
+      else
+        blockchain
+          .parent(block, count)
+          .map(parent => complete(Json.obj("delay" -> (block.timestamp - parent.timestamp) / count)))
+          .getOrElse(complete(CustomValidationError(s"Cannot go $count blocks back")))
     }
   }
 

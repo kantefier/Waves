@@ -19,7 +19,7 @@ object Types {
   case class PARAMETERIZEDUNION(l: List[SINGLE]) extends PARAMETERIZED
   case object NOTHING                            extends FINAL { override val name = "Nothing"; override val l = List() }
   case object LONG                               extends REAL { override val name = "Int"; override val l = List(this) }
-  case object BYTEVECTOR                         extends REAL { override val name = "ByteVector"; override val l = List(this) }
+  case object BYTESTR                            extends REAL { override val name = "ByteVector"; override val l = List(this) }
   case object BOOLEAN                            extends REAL { override val name = "Boolean"; override val l = List(this) }
   case object STRING                             extends REAL { override val name = "String"; override val l = List(this) }
   case class LIST(innerType: FINAL) extends REAL {
@@ -55,6 +55,11 @@ object Types {
     }
     def apply(l: REAL*): UNION = create(l.toList)
 
+    def reduce(u: UNION): FINAL = u.l match {
+      case Nil      => throw new Exception("Empty union")
+      case x :: Nil => x
+      case _        => u
+    }
   }
 
   implicit class TypeExt(l1: FINAL) {

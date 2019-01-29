@@ -2,19 +2,20 @@ package com.wavesplatform.state
 
 import java.util.concurrent.TimeUnit
 
-import com.wavesplatform.lang.v1.compiler.CompilerV1
+import com.wavesplatform.account.PrivateKeyAccount
+import com.wavesplatform.common.utils.EitherExt2
+import com.wavesplatform.lang.Version.ExprV1
+import com.wavesplatform.lang.v1.compiler.ExpressionCompilerV1
 import com.wavesplatform.lang.v1.parser.Parser
 import com.wavesplatform.settings.FunctionalitySettings
 import com.wavesplatform.state.StateSyntheticBenchmark._
+import com.wavesplatform.transaction.Transaction
+import com.wavesplatform.transaction.smart.SetScriptTransaction
+import com.wavesplatform.transaction.smart.script.v1.ExprScript
+import com.wavesplatform.transaction.transfer._
 import com.wavesplatform.utils.compilerContext
 import org.openjdk.jmh.annotations._
 import org.scalacheck.Gen
-import com.wavesplatform.account.PrivateKeyAccount
-import com.wavesplatform.lang.ScriptVersion.Versions.V1
-import com.wavesplatform.transaction.Transaction
-import com.wavesplatform.transaction.smart.SetScriptTransaction
-import com.wavesplatform.transaction.smart.script.v1.ScriptV1
-import com.wavesplatform.transaction.transfer._
 
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @BenchmarkMode(Array(Mode.AverageTime))
@@ -74,8 +75,8 @@ object StateSyntheticBenchmark {
       super.init()
 
       val textScript    = "sigVerify(tx.bodyBytes,tx.proofs[0],tx.senderPk)"
-      val untypedScript = Parser(textScript).get.value
-      val typedScript   = CompilerV1(compilerContext(V1, isAssetScript = false), untypedScript).explicitGet()._1
+      val untypedScript = Parser.parseScript(textScript).get.value
+      val typedScript   = ExpressionCompilerV1(compilerContext(ExprV1, isAssetScript = false), untypedScript).explicitGet()._1
 
       val setScriptBlock = nextBlock(
         Seq(
@@ -83,7 +84,7 @@ object StateSyntheticBenchmark {
             .selfSigned(
               SetScriptTransaction.supportedVersions.head,
               richAccount,
-              Some(ScriptV1(typedScript).explicitGet()),
+              Some(ExprScript(typedScript).explicitGet()),
               1000000,
               System.currentTimeMillis()
             )

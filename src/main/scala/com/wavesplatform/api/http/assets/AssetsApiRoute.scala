@@ -4,21 +4,26 @@ import java.util.concurrent._
 
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Route
-import cats.implicits._
+import cats.instances.either.catsStdInstancesForEither
+import cats.instances.option.catsStdInstancesForOption
+import cats.syntax.either._
+import cats.syntax.traverse._
 import com.google.common.base.Charsets
 import com.wavesplatform.account.Address
 import com.wavesplatform.api.http._
 import com.wavesplatform.api.http.assets.AssetsApiRoute.DistributionParams
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.Base58
 import com.wavesplatform.http.BroadcastRoute
 import com.wavesplatform.settings.RestAPISettings
-import com.wavesplatform.state.{Blockchain, ByteStr}
+import com.wavesplatform.state.Blockchain
 import com.wavesplatform.transaction.ValidationError.GenericError
 import com.wavesplatform.transaction.assets.IssueTransaction
 import com.wavesplatform.transaction.assets.exchange.Order
 import com.wavesplatform.transaction.assets.exchange.OrderJson._
 import com.wavesplatform.transaction.smart.script.ScriptCompiler
 import com.wavesplatform.transaction.{AssetId, AssetIdStringLength, TransactionFactory, ValidationError}
-import com.wavesplatform.utils.{Base58, Time, _}
+import com.wavesplatform.utils.{Time, _}
 import com.wavesplatform.utx.UtxPool
 import com.wavesplatform.wallet.Wallet
 import io.netty.channel.group.ChannelGroup
@@ -68,7 +73,7 @@ case class AssetsApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPoo
     )
 
     distributionTask.map {
-      case Right(dst) => AssetsApiRoute.distributionToJson(dst): ToResponseMarshallable
+      case Right(dst) => Json.toJson(dst): ToResponseMarshallable
       case Left(err)  => ApiError.fromValidationError(err)
     }
   }
@@ -90,7 +95,7 @@ case class AssetsApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPoo
         case Right(assetId) =>
           Task
             .eval(blockchain.assetDistribution(assetId))
-            .map(dst => AssetsApiRoute.distributionToJson(dst): ToResponseMarshallable)
+            .map(dst => Json.toJson(dst): ToResponseMarshallable)
       }
 
       complete {
@@ -122,7 +127,7 @@ case class AssetsApiRoute(settings: RestAPISettings, wallet: Wallet, utx: UtxPoo
       (assetParam, heightParam, limitParam, afterParam) =>
         val paramsEi: Either[ValidationError, DistributionParams] =
           AssetsApiRoute
-            .validateDistributionParams(settings, blockchain, assetParam, heightParam, limitParam, afterParam)
+            .validateDistributionParams(blockchain, assetParam, heightParam, limitParam, settings.distributionAddressLimit, afterParam)
 
         val resultTask = paramsEi match {
           case Left(err)     => Task.pure(ApiError.fromValidationError(err): ToResponseMarshallable)
@@ -289,14 +294,14 @@ object AssetsApiRoute {
 
   type DistributionParams = (AssetId, Int, Int, Option[Address])
 
-  def validateDistributionParams(settings: RestAPISettings,
-                                 blockchain: Blockchain,
+  def validateDistributionParams(blockchain: Blockchain,
                                  assetParam: String,
                                  heightParam: Int,
                                  limitParam: Int,
+                                 maxLimit: Int,
                                  afterParam: Option[String]): Either[ValidationError, DistributionParams] = {
     for {
-      limit   <- validateLimit(settings, limitParam)
+      limit   <- validateLimit(limitParam, maxLimit)
       height  <- validateHeight(blockchain, heightParam)
       assetId <- validateAssetId(assetParam)
       after   <- afterParam.traverse[Either[ValidationError, ?], Address](Address.fromString)
@@ -316,19 +321,23 @@ object AssetsApiRoute {
   }
 
   def validateHeight(blockchain: Blockchain, height: Int): Either[ValidationError, Int] = {
-    Either.cond(height > 0 && height <= blockchain.height, height, GenericError(s"Height should be in range (1 - ${blockchain.height})"))
+    for {
+      _ <- Either
+        .cond(height > 0, (), GenericError(s"Height should be greater than zero"))
+      _ <- Either
+        .cond(height != blockchain.height, (), GenericError(s"Using 'assetDistributionAtHeight' on current height can lead to inconsistent result"))
+      _ <- Either
+        .cond(height < blockchain.height, (), GenericError(s"Asset distribution available only at height not greater than ${blockchain.height - 1}"))
+    } yield height
+
   }
 
-  def validateLimit(settings: RestAPISettings, limit: Int): Either[ValidationError, Int] = {
+  def validateLimit(limit: Int, maxLimit: Int): Either[ValidationError, Int] = {
     for {
       _ <- Either
         .cond(limit > 0, (), GenericError("Limit should be greater than 0"))
       _ <- Either
-        .cond(limit < settings.distributionAddressLimit, (), GenericError(s"Limit should be less than ${settings.transactionByAddressLimit}"))
+        .cond(limit < maxLimit, (), GenericError(s"Limit should be less than $maxLimit"))
     } yield limit
-  }
-
-  def distributionToJson(dst: Map[Address, Long]) = {
-    Json.toJson(dst.map { case (a, b) => a.stringRepr -> b })
   }
 }

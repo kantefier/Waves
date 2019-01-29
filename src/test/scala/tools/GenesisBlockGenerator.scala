@@ -3,17 +3,19 @@ package tools
 import java.io.{File, FileNotFoundException}
 
 import com.typesafe.config.ConfigFactory
-import com.wavesplatform.crypto
-import com.wavesplatform.settings.{GenesisSettings, GenesisTransactionSettings}
-import com.wavesplatform.state._
-import net.ceedubs.ficus.Ficus._
-import net.ceedubs.ficus.readers.ArbitraryTypeReader._
 import com.wavesplatform.account.{Address, AddressScheme, PrivateKeyAccount}
 import com.wavesplatform.block.Block
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.consensus.nxt.NxtLikeConsensusBlockData
+import com.wavesplatform.crypto
+import com.wavesplatform.crypto._
+import com.wavesplatform.settings.{GenesisSettings, GenesisTransactionSettings}
 import com.wavesplatform.transaction.GenesisTransaction
 import com.wavesplatform.wallet.Wallet
-import com.wavesplatform.crypto._
+import net.ceedubs.ficus.Ficus._
+import net.ceedubs.ficus.readers.ArbitraryTypeReader._
+
 import scala.concurrent.duration._
 
 object GenesisBlockGenerator extends App {
@@ -27,14 +29,14 @@ object GenesisBlockGenerator extends App {
                       averageBlockDelay: FiniteDuration,
                       timestamp: Option[Long],
                       distributions: Map[SeedText, Share]) {
-    private val distributionsSum = distributions.values.sum
 
+    private[this] val distributionsSum = distributions.values.sum
     require(
-      distributionsSum <= initialBalance,
-      s"The sum of all balances should be <= $initialBalance, but it is $distributionsSum"
+      distributionsSum == initialBalance,
+      s"The sum of all balances should be == $initialBalance, but it is $distributionsSum"
     )
 
-    val networkByte: Byte = networkType.head.toByte
+    val chainId: Byte = networkType.head.toByte
   }
 
   case class FullAddressInfo(seedText: SeedText,
@@ -70,7 +72,7 @@ object GenesisBlockGenerator extends App {
   }
 
   com.wavesplatform.account.AddressScheme.current = new AddressScheme {
-    override val chainId: Byte = settings.networkByte
+    override val chainId: Byte = settings.chainId
   }
 
   val shares: Map[FullAddressInfo, Share] = {

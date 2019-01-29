@@ -2,6 +2,8 @@ package com.wavesplatform.it.sync.matcher.smartcontracts
 
 import com.typesafe.config.{Config, ConfigFactory}
 import com.wavesplatform.account.{AddressScheme, PrivateKeyAccount}
+import com.wavesplatform.common.utils.EitherExt2
+import com.wavesplatform.features.BlockchainFeatures
 import com.wavesplatform.it.api.SyncHttpApi.NodeExtSync
 import com.wavesplatform.it.api.SyncMatcherHttpApi._
 import com.wavesplatform.it.matcher.MatcherSuiteBase
@@ -9,10 +11,9 @@ import com.wavesplatform.it.sync.createSignedIssueRequest
 import com.wavesplatform.it.sync.matcher.config.MatcherDefaultConfig
 import com.wavesplatform.it.util._
 import com.wavesplatform.lang.v1.compiler.Terms
-import com.wavesplatform.state.EitherExt2
 import com.wavesplatform.transaction.assets.exchange.{AssetPair, Order, OrderType}
 import com.wavesplatform.transaction.assets.{IssueTransactionV1, IssueTransactionV2}
-import com.wavesplatform.transaction.smart.script.v1.ScriptV1
+import com.wavesplatform.transaction.smart.script.v1.ExprScript
 import com.wavesplatform.transaction.smart.script.{Script, ScriptCompiler}
 
 import scala.concurrent.duration._
@@ -28,6 +29,21 @@ class OrdersFromScriptedAssetTestSuite extends MatcherSuiteBase {
   import OrdersFromScriptedAssetTestSuite._
 
   override protected def nodeConfigs: Seq[Config] = Configs
+
+  "can match orders when SmartAccTrading is still not activated" in {
+    val pair = AssetPair(None, Some(AllowAsset.id()))
+
+    val counter =
+      matcherNode.placeOrder(matcherPk, pair, OrderType.SELL, 100000, 2 * Order.PriceConstant, version = 1, fee = smartTradeFee)
+    matcherNode.waitOrderStatus(pair, counter.message.id, "Accepted")
+
+    val submitted =
+      matcherNode.placeOrder(matcherPk, pair, OrderType.BUY, 100000, 2 * Order.PriceConstant, version = 1, fee = smartTradeFee)
+    matcherNode.waitOrderStatus(pair, submitted.message.id, "Filled")
+
+    matcherNode.waitOrderInBlockchain(submitted.message.id)
+    matcherNode.waitForHeight(activationHeight + 1, 2.minutes)
+  }
 
   "can place if the script returns TRUE" in {
     val pair = AssetPair.createAssetPair(UnscriptedAssetId, AllowAssetId).get
@@ -203,7 +219,7 @@ object OrdersFromScriptedAssetTestSuite {
         quantity = Int.MaxValue / 3,
         decimals = 0,
         reissuable = false,
-        script = Some(ScriptV1(Terms.TRUE).explicitGet()),
+        script = Some(ExprScript(Terms.TRUE).explicitGet()),
         fee = 1.waves,
         timestamp = System.currentTimeMillis()
       )
@@ -227,7 +243,7 @@ object OrdersFromScriptedAssetTestSuite {
       quantity = Int.MaxValue / 3,
       decimals = 0,
       reissuable = false,
-      script = Some(ScriptV1(Terms.FALSE).explicitGet()),
+      script = Some(ExprScript(Terms.FALSE).explicitGet()),
       fee = 1.waves,
       timestamp = System.currentTimeMillis()
     )
@@ -246,9 +262,14 @@ object OrdersFromScriptedAssetTestSuite {
     ScriptCompiler(scriptText, isAssetScript = true).explicitGet()._1
   }
 
+  val activationHeight = 10
+
   private val commonConfig = ConfigFactory.parseString(s"""
                                                            |waves {
-                                                           |  blockchain.custom.functionality.pre-activated-features = { 9 = 0 }
+                                                           |  blockchain.custom.functionality.pre-activated-features = {
+                                                           |    ${BlockchainFeatures.SmartAssets.id} = 0,
+                                                           |    ${BlockchainFeatures.SmartAccountTrading.id} = $activationHeight
+                                                           |  }
                                                            |  matcher.price-assets = ["$AllowAssetId", "$DenyAssetId", "$UnscriptedAssetId"]
                                                            |}
                                                            |waves.matcher {

@@ -1,8 +1,9 @@
 import cats.kernel.Monoid
 import com.wavesplatform.lang.Global
+import com.wavesplatform.lang.contract.{Contract, ContractSerDe}
 import com.wavesplatform.lang.v1.FunctionHeader.{Native, User}
-import com.wavesplatform.lang.v1.{Serde, CTX}
-import com.wavesplatform.lang.v1.compiler.CompilerV1
+import com.wavesplatform.lang.v1.{CTX, Serde}
+import com.wavesplatform.lang.v1.compiler.{ContractCompiler, ExpressionCompilerV1}
 import com.wavesplatform.lang.v1.compiler.Terms._
 import com.wavesplatform.lang.v1.compiler.Types._
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.waves.WavesContext
@@ -22,11 +23,11 @@ object JsAPI {
   private def toJs(ast: EXPR): js.Object = {
     def r(expr: EXPR): js.Object = {
       expr match {
-        case CONST_LONG(t)        => jObj.applyDynamic("apply")("type" -> "LONG", "value"       -> t)
-        case GETTER(ref, field)   => jObj.applyDynamic("apply")("type" -> "GETTER", "ref"       -> r(ref), "field" -> field)
-        case CONST_BYTEVECTOR(bs) => jObj.applyDynamic("apply")("type" -> "BYTEVECTOR", "value" -> bs.toArray.toJSArray)
-        case CONST_STRING(s)      => jObj.applyDynamic("apply")("type" -> "STRING", "value"     -> s)
-        case BLOCK(let, body) =>
+        case CONST_LONG(t)      => jObj.applyDynamic("apply")("type" -> "LONG", "value"    -> t)
+        case GETTER(ref, field) => jObj.applyDynamic("apply")("type" -> "GETTER", "ref"    -> r(ref), "field" -> field)
+        case CONST_BYTESTR(bs)  => jObj.applyDynamic("apply")("type" -> "BYTESTR", "value" -> bs.arr.toJSArray)
+        case CONST_STRING(s)    => jObj.applyDynamic("apply")("type" -> "STRING", "value"  -> s)
+        case LET_BLOCK(let, body) =>
           jObj.applyDynamic("apply")("type" -> "BLOCK", "let" -> jObj("name" -> let.name, "value" -> r(let.value)), "body" -> r(body))
         case IF(cond, ifTrue, ifFalse) =>
           jObj.applyDynamic("apply")("type" -> "IF", "condition" -> r(cond), "true" -> r(ifTrue), "false" -> r(ifFalse))
@@ -37,19 +38,22 @@ object JsAPI {
             case Native(name) => name.toString()
             case User(name)   => name
           }), "args" -> args.map(r).toJSArray)
+        case t => jObj.applyDynamic("apply")("[not_supported]stringRepr" -> t.toString)
       }
     }
 
     r(ast)
   }
 
-  val version = com.wavesplatform.lang.ScriptVersion.Versions.V1
+  private def toJs(c: Contract): js.Object = {
+    toJs(TRUE) // later
+  }
 
-  val wavesContext = WavesContext.build(
-    version,
+  def wavesContext(v: com.wavesplatform.lang.Version.Version) = WavesContext.build(
+    v,
     new Environment {
       override def height: Long                                                                                    = 0
-      override def networkByte: Byte                                                                               = 1: Byte
+      override def chainId: Byte                                                                                   = 1: Byte
       override def inputEntity: Tx :+: Ord :+: CNil                                                                = null
       override def transactionById(id: Array[Byte]): Option[Tx]                                                    = ???
       override def transactionHeightById(id: Array[Byte]): Option[Long]                                            = ???
@@ -59,6 +63,11 @@ object JsAPI {
     },
     isTokenContext = false
   )
+
+  val v1                   = com.wavesplatform.lang.Version.ExprV1
+  val v3                   = com.wavesplatform.lang.Version.ContractV
+  val exprWavesContext     = wavesContext(v1)
+  val contractWavesContext = wavesContext(v3)
 
   val cryptoContext = CryptoContext.build(Global)
 
@@ -71,7 +80,9 @@ object JsAPI {
   }
 
   @JSExportTopLevel("fullContext")
-  val fullContext: CTX = Monoid.combineAll(Seq(PureContext.build(version), cryptoContext, wavesContext))
+  val fullContext: CTX = Monoid.combineAll(Seq(PureContext.build(v1), cryptoContext, exprWavesContext))
+
+  val fullContractContext: CTX = Monoid.combineAll(Seq(PureContext.build(v3), cryptoContext, contractWavesContext))
 
   @JSExportTopLevel("getTypes")
   def getTypes() = fullContext.types.map(v => js.Dynamic.literal("name" -> v.name, "type" -> typeRepr(v.typeRef))).toJSArray
@@ -107,10 +118,10 @@ object JsAPI {
       Right(s ++ hash(s).take(4))
     }
 
-    (Parser(input) match {
+    (Parser.parseScript(input) match {
       case Success(value, _)    => Right[String, Expressions.EXPR](value)
       case Failure(_, _, extra) => Left[String, Expressions.EXPR](extra.traced.trace)
-    }).flatMap(CompilerV1(compilerContext, _))
+    }).flatMap(ExpressionCompilerV1(fullContractContext.compilerContext, _))
       .flatMap(ast => serialize(ast._1).map(x => (x, ast)))
       .fold(
         err => {
@@ -119,6 +130,32 @@ object JsAPI {
           case (result, ast) =>
             //js.Dynamic.literal("result" -> result)
             js.Dynamic.literal("result" -> Global.toBuffer(result), "ast" -> toJs(ast._1))
+        }
+      )
+  }
+
+  @JSExportTopLevel("compileContract")
+  def compileContract(input: String): js.Dynamic = {
+
+    def hash(m: Array[Byte]) = Global.keccak256(Global.blake2b256(m))
+
+    def serialize(expr: Contract): Either[String, Array[Byte]] = {
+      val s = 3.toByte +: ContractSerDe.serialize(expr)
+      Right(s ++ hash(s).take(4))
+    }
+
+    (Parser.parseContract(input) match {
+      case Success(value, _)    => Right[String, Expressions.CONTRACT](value)
+      case Failure(_, _, extra) => Left[String, Expressions.CONTRACT](extra.traced.trace)
+    }).flatMap(ContractCompiler(fullContractContext.compilerContext, _))
+      .flatMap(ast => serialize(ast).map(x => (x, ast)))
+      .fold(
+        err => {
+          js.Dynamic.literal("error" -> err)
+        }, {
+          case (result, ast) =>
+            //js.Dynamic.literal("result" -> result)
+            js.Dynamic.literal("result" -> Global.toBuffer(result), "ast" -> toJs(ast))
         }
       )
   }

@@ -2,16 +2,16 @@ package com.wavesplatform.transaction.assets
 
 import cats.data.State
 import com.google.common.primitives.{Bytes, Longs}
-import com.wavesplatform.state.ByteStr
+import com.wavesplatform.account._
+import com.wavesplatform.common.state.ByteStr
 import monix.eval.Coeval
 import play.api.libs.json.{JsObject, Json}
-import com.wavesplatform.account._
-//import com.wavesplatform.transaction.validation._
+import com.wavesplatform.common.utils.EitherExt2
+import com.wavesplatform.crypto._
+import com.wavesplatform.serialization.Deser
 import com.wavesplatform.transaction._
 import com.wavesplatform.transaction.smart.script.{Script, ScriptReader}
-import com.wavesplatform.serialization.Deser
-import com.wavesplatform.crypto._
-import com.wavesplatform.state._
+
 import scala.util.{Failure, Success, Try}
 
 case class SetAssetScriptTransaction private (version: Byte,
@@ -54,7 +54,7 @@ object SetAssetScriptTransaction extends TransactionParserFor[SetAssetScriptTran
   val typeId: Byte                          = 15
   override val supportedVersions: Set[Byte] = Set(1)
 
-  private def networkByte = AddressScheme.current.chainId
+  private def currentChainId = AddressScheme.current.chainId
 
   def create(
       version: Byte,
@@ -68,7 +68,9 @@ object SetAssetScriptTransaction extends TransactionParserFor[SetAssetScriptTran
   ): Either[ValidationError, TransactionT] = {
     for {
       _ <- Either.cond(supportedVersions.contains(version), (), ValidationError.UnsupportedVersion(version))
-      _ <- Either.cond(chainId == networkByte, (), ValidationError.GenericError(s"Wrong chainId actual: ${chainId.toInt}, expected: $networkByte"))
+      _ <- Either.cond(chainId == currentChainId,
+                       (),
+                       ValidationError.GenericError(s"Wrong chainId actual: ${chainId.toInt}, expected: $currentChainId"))
     } yield SetAssetScriptTransaction(version, chainId, sender, assetId, script, fee, timestamp, proofs)
 
   }

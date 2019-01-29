@@ -1,10 +1,11 @@
 package com.wavesplatform.lang.compiler
 
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.lang.Common
 import com.wavesplatform.lang.Common._
 import com.wavesplatform.lang.v1.compiler.Terms._
 import com.wavesplatform.lang.v1.compiler.Types._
-import com.wavesplatform.lang.v1.compiler.{CompilerContext, CompilerV1}
+import com.wavesplatform.lang.v1.compiler.{CompilerContext, ExpressionCompilerV1}
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.PureContext._
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.{PureContext, _}
 import com.wavesplatform.lang.v1.parser.BinaryOperation.SUM_OP
@@ -15,20 +16,19 @@ import com.wavesplatform.lang.v1.testing.ScriptGen
 import com.wavesplatform.lang.v1.{FunctionHeader, compiler}
 import org.scalatest.prop.PropertyChecks
 import org.scalatest.{Matchers, PropSpec}
-import scodec.bits.ByteVector
 
-class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with ScriptGen with NoShrink {
+class ExpressionCompilerV1Test extends PropSpec with PropertyChecks with Matchers with ScriptGen with NoShrink {
 
   property("should infer generic function return type") {
     import com.wavesplatform.lang.v1.parser.Expressions._
-    val Right(v) = CompilerV1(compilerContext, FUNCTION_CALL(AnyPos, PART.VALID(AnyPos, idT.name), List(CONST_LONG(AnyPos, 1))))
+    val Right(v) = ExpressionCompilerV1(compilerContext, FUNCTION_CALL(AnyPos, PART.VALID(AnyPos, idT.name), List(CONST_LONG(AnyPos, 1))))
     v._2 shouldBe LONG
   }
 
   property("should infer inner types") {
     import com.wavesplatform.lang.v1.parser.Expressions._
     val Right(v) =
-      CompilerV1(
+      ExpressionCompilerV1(
         compilerContext,
         FUNCTION_CALL(AnyPos,
                       PART.VALID(AnyPos, "getElement"),
@@ -43,7 +43,7 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
     }
 
     val expectedResult = Right(LONG)
-    CompilerV1(compilerContext, expr).map(_._2) match {
+    ExpressionCompilerV1(compilerContext, expr).map(_._2) match {
       case Right(x)    => Right(x) shouldBe expectedResult
       case e @ Left(_) => e shouldBe expectedResult
     }
@@ -211,7 +211,7 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
           | }
           | a + b
       """.stripMargin
-      Parser.apply(script).get.value
+      Parser.parseScript(script).get.value
     },
     expectedResult = {
       Right(
@@ -303,7 +303,7 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
       )
     ),
     expectedResult = Left(
-      "Compilation failed: Value 'p1' declared as non-existing type, while all possible types are List(Point, PointB, Boolean, Int, PointA, ByteVector, Unit, String) in -1--1")
+      "Compilation failed: Value 'p1' declared as non-existing type, while all possible types are List(Point, PointB, Boolean, Int, PointA, ByteStr, Unit, String) in -1--1")
   )
 
   treeTypeTest("Invalid LET")(
@@ -323,9 +323,9 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
     expectedResult = Left("Compilation failed: can't parse in 2-3")
   )
 
-  treeTypeTest("Invalid BYTEVECTOR")(
+  treeTypeTest("Invalid BYTESTR")(
     ctx = compilerContext,
-    expr = Expressions.CONST_BYTEVECTOR(AnyPos, Expressions.PART.INVALID(AnyPos, "can't parse")),
+    expr = Expressions.CONST_BYTESTR(AnyPos, Expressions.PART.INVALID(AnyPos, "can't parse")),
     expectedResult = Left("Compilation failed: can't parse in -1--1")
   )
 
@@ -360,9 +360,9 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
     expr = Expressions.FUNCTION_CALL(
       AnyPos,
       Expressions.PART.VALID(AnyPos, dropRightFunctionName),
-      List(Expressions.CONST_BYTEVECTOR(AnyPos, Expressions.PART.VALID(AnyPos, ByteVector.empty)), Expressions.CONST_LONG(AnyPos, 1))
+      List(Expressions.CONST_BYTESTR(AnyPos, Expressions.PART.VALID(AnyPos, ByteStr.empty)), Expressions.CONST_LONG(AnyPos, 1))
     ),
-    expectedResult = Right((FUNCTION_CALL(dropRightBytes.header, List(CONST_BYTEVECTOR(ByteVector.empty), CONST_LONG(1))), BYTEVECTOR))
+    expectedResult = Right((FUNCTION_CALL(dropRightBytes.header, List(CONST_BYTESTR(ByteStr.empty), CONST_LONG(1))), BYTESTR))
   )
 
   treeTypeTest("user function overloading 2")(
@@ -382,12 +382,32 @@ class CompilerV1Test extends PropSpec with PropertyChecks with Matchers with Scr
       Expressions.PART.VALID(AnyPos, dropRightFunctionName),
       List(Expressions.TRUE(AnyPos), Expressions.CONST_LONG(AnyPos, 1))
     ),
-    expectedResult = Left("Compilation failed: Can't find a function 'dropRight'(Boolean, Int) in -1--1")
+    expectedResult = Left("Compilation failed: Can't find a function overload 'dropRight'(Boolean, Int) in -1--1")
+  )
+
+  treeTypeTest("user function definition and usage")(
+    ctx = compilerContext,
+    expr = Expressions.BLOCK(
+      AnyPos,
+      Expressions.FUNC(
+        AnyPos,
+        Expressions.PART.VALID(AnyPos, "id"),
+        Seq((Expressions.PART.VALID(AnyPos, "x"), Seq(Expressions.PART.VALID(AnyPos, "Int")))),
+        Expressions.REF(AnyPos, Expressions.PART.VALID(AnyPos, "x"))
+      ),
+      Expressions.FUNCTION_CALL(AnyPos, Expressions.PART.VALID(AnyPos, "id"), List(Expressions.CONST_LONG(AnyPos, 1L)))
+    ),
+    expectedResult = Right(
+      (BLOCK(
+         FUNC("id", List("x"), REF("x")),
+         FUNCTION_CALL(FunctionHeader.User("id"), List(CONST_LONG(1L)))
+       ),
+       LONG))
   )
 
   private def treeTypeTest(propertyName: String)(expr: Expressions.EXPR, expectedResult: Either[String, (EXPR, TYPE)], ctx: CompilerContext): Unit =
     property(propertyName) {
-      compiler.CompilerV1(ctx, expr) shouldBe expectedResult
+      compiler.ExpressionCompilerV1(ctx, expr) shouldBe expectedResult
     }
 
 }

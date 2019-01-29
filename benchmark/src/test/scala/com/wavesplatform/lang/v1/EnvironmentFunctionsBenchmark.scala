@@ -2,17 +2,16 @@ package com.wavesplatform.lang.v1
 
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
 
-import com.wavesplatform.lang.{Common, Global}
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.lang.v1.EnvironmentFunctionsBenchmark._
 import com.wavesplatform.lang.v1.evaluator.ctx.impl.EnvironmentFunctions
 import com.wavesplatform.lang.v1.traits._
 import com.wavesplatform.lang.v1.traits.domain.{Ord, Recipient, Tx}
-import com.wavesplatform.state.EitherExt2
+import com.wavesplatform.lang.{Common, Global}
 import org.openjdk.jmh.annotations._
-import shapeless.:+:
-import shapeless.CNil
-import scodec.bits.ByteVector
 import scorex.crypto.signatures.{Curve25519, PrivateKey, PublicKey, Signature}
+import shapeless.{:+:, CNil}
 
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @BenchmarkMode(Array(Mode.AverageTime))
@@ -65,20 +64,20 @@ class EnvironmentFunctionsBenchmark {
   }
 
   @Benchmark
-  def addressFromPublicKey_test(): ByteVector = randomAddress
+  def addressFromPublicKey_test(): ByteStr = randomAddress
 
 }
 
 object EnvironmentFunctionsBenchmark {
 
-  val NetworkByte: Byte = 'P'
+  val ChainId: Byte     = 'P'
   val Base58BytesLength = Global.MaxBase58Bytes
   val DataBytesLength   = 512
   val SeedBytesLength   = 128
 
   private val defaultEnvironment: Environment = new Environment {
     override def height: Long                                                                                    = 1
-    override def networkByte: Byte                                                                               = NetworkByte
+    override def chainId: Byte                                                                                   = ChainId
     override def inputEntity: Tx :+: Ord :+: CNil                                                                = ???
     override def transactionById(id: Array[Byte]): Option[Tx]                                                    = ???
     override def data(recipient: Recipient, key: String, dataType: DataType): Option[Any]                        = ???
@@ -95,7 +94,7 @@ object EnvironmentFunctionsBenchmark {
     bytes
   }
 
-  def randomAddress: ByteVector = ByteVector(Common.addressFromPublicKey(NetworkByte, randomBytes(Curve25519.KeyLength)))
+  def randomAddress: ByteStr = ByteStr(Common.addressFromPublicKey(ChainId, randomBytes(Curve25519.KeyLength)))
 
   def hashTest[T](f: Array[Byte] => T): T           = f(randomBytes(DataBytesLength))
   def hashTest[T](len: Int, f: Array[Byte] => T): T = f(randomBytes(len))

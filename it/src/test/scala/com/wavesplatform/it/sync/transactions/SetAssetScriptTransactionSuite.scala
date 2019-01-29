@@ -1,18 +1,20 @@
 package com.wavesplatform.it.sync.transactions
 
 import com.wavesplatform.account.AddressScheme
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.crypto
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.sync.{script, someAssetAmount, _}
 import com.wavesplatform.it.transactions.BaseTransactionSuite
 import com.wavesplatform.it.util._
-import com.wavesplatform.state.ByteStr
 import com.wavesplatform.transaction.Proofs
 import com.wavesplatform.transaction.assets.SetAssetScriptTransaction
 import com.wavesplatform.transaction.smart.SetScriptTransaction
 import com.wavesplatform.transaction.smart.script.ScriptCompiler
 import play.api.libs.json._
 import scorex.crypto.encode.Base58
+
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -170,7 +172,7 @@ class SetAssetScriptTransactionSuite extends BaseTransactionSuite {
     val (balance, eff) = notMiner.accountBalances(firstAddress)
 
     val invalidTxs = Seq(
-      (sastx(timestamp = System.currentTimeMillis + 1.day.toMillis), "Transaction .* is from far future"),
+      (sastx(timestamp = System.currentTimeMillis + 1.day.toMillis), "Transaction timestamp .* is more than .*ms in the future"),
       (sastx(fee = 9999999), "Fee .* does not exceed minimal value"),
       (sastx(assetId = ByteStr.decodeBase58("9ekQuYn92natMnMq8KqeGK3Nn7cpKd3BvPEGgD6fFyyz9ekQuYn92natMnMq8").get), "invalid.assetId"),
       (sastx(assetId = ByteStr.decodeBase58("9ekQuYn92natMnMq8KqeGK3Nn7cpKd3BvPEGgD6fFyyz").get), "Referenced assetId not found")

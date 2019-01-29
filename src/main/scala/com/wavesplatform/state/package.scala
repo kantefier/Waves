@@ -1,11 +1,17 @@
 package com.wavesplatform
 
+import cats.kernel.Monoid
 import com.wavesplatform.account.{Address, AddressOrAlias, Alias}
 import com.wavesplatform.block.Block
+import com.wavesplatform.common.state.ByteStr
+import com.wavesplatform.common.utils.EitherExt2
 import com.wavesplatform.transaction.Transaction.Type
 import com.wavesplatform.transaction.ValidationError.{AliasDoesNotExist, GenericError}
 import com.wavesplatform.transaction._
 import com.wavesplatform.transaction.lease.{LeaseTransaction, LeaseTransactionV1}
+import com.wavesplatform.utils.Paged
+import play.api.libs.json._
+import supertagged.TaggedType
 
 import scala.reflect.ClassTag
 import scala.util.Try
@@ -55,13 +61,6 @@ package object state {
   implicit class EitherExt[L <: ValidationError, R](ei: Either[L, R]) {
     def liftValidationError[T <: Transaction](t: T): Either[ValidationError, R] = {
       ei.left.map(e => GenericError(e.toString))
-    }
-  }
-
-  implicit class EitherExt2[A, B](ei: Either[A, B]) {
-    def explicitGet(): B = ei match {
-      case Left(value)  => throw new Exception(value.toString)
-      case Right(value) => value
     }
   }
 
@@ -131,6 +130,37 @@ package object state {
       blockchain
         .heightOf(id)
         .getOrElse(throw new IllegalStateException(s"Can't find a block: $id"))
+  }
+
+  object AssetDistribution extends TaggedType[Map[Address, Long]]
+  type AssetDistribution = AssetDistribution.Type
+
+  implicit val dstMonoid: Monoid[AssetDistribution] = new Monoid[AssetDistribution] {
+    override def empty: AssetDistribution = AssetDistribution(Map.empty[Address, Long])
+
+    override def combine(x: AssetDistribution, y: AssetDistribution): AssetDistribution = {
+      AssetDistribution(x ++ y)
+    }
+  }
+
+  implicit val dstWrites: Writes[AssetDistribution] = Writes { dst =>
+    Json
+      .toJson(dst.map {
+        case (addr, balance) => addr.stringRepr -> balance
+      })
+  }
+
+  object AssetDistributionPage extends TaggedType[Paged[Address, AssetDistribution]]
+  type AssetDistributionPage = AssetDistributionPage.Type
+
+  implicit val dstPageWrites: Writes[AssetDistributionPage] = Writes { page =>
+    JsObject(
+      Map(
+        "hasNext"  -> JsBoolean(page.hasNext),
+        "lastItem" -> Json.toJson(page.lastItem.map(_.stringRepr)),
+        "items"    -> Json.toJson(page.items)
+      )
+    )
   }
 
 }

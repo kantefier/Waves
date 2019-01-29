@@ -1,15 +1,16 @@
 package com.wavesplatform.it.sync.transactions
 
 import com.typesafe.config.Config
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.sync._
 import com.wavesplatform.it.transactions.NodesFromDocker
 import com.wavesplatform.it.util._
 import com.wavesplatform.it.{NodeConfigs, ReportingTestName}
-import com.wavesplatform.state.ByteStr
 import com.wavesplatform.state.diffs.CommonValidation
 import com.wavesplatform.transaction.assets.SponsorFeeTransaction
 import org.scalatest.{Assertion, CancelAfterFailure, FreeSpec, Matchers}
+
 import scala.concurrent.duration._
 
 class SponsorshipSuite extends FreeSpec with NodesFromDocker with Matchers with ReportingTestName with CancelAfterFailure {
@@ -89,7 +90,7 @@ class SponsorshipSuite extends FreeSpec with NodesFromDocker with Matchers with 
             .get
 
         val iTx = invalidTx(timestamp = System.currentTimeMillis + 1.day.toMillis)
-        assertBadRequestAndResponse(sponsor.broadcastRequest(iTx.json()), "Transaction .* is from far future")
+        assertBadRequestAndResponse(sponsor.broadcastRequest(iTx.json()), "Transaction timestamp .* is more than .*ms in the future")
       }
     }
 

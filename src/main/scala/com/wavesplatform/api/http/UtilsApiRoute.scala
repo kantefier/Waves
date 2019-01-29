@@ -4,10 +4,11 @@ import java.security.SecureRandom
 
 import javax.ws.rs.Path
 import akka.http.scaladsl.server.Route
+import com.wavesplatform.common.utils.Base58
 import com.wavesplatform.crypto
 import com.wavesplatform.settings.RestAPISettings
 import com.wavesplatform.state.diffs.CommonValidation
-import com.wavesplatform.utils.{Base58, Time}
+import com.wavesplatform.utils.Time
 import io.swagger.annotations._
 import play.api.libs.json._
 import com.wavesplatform.transaction.smart.script.{Script, ScriptCompiler}
@@ -25,7 +26,7 @@ case class UtilsApiRoute(timeService: Time, settings: RestAPISettings) extends A
   }
 
   override val route: Route = pathPrefix("utils") {
-    compile ~ estimate ~ time ~ seedRoute ~ length ~ hashFast ~ hashSecure ~ sign ~ transactionSerialize
+    compile ~ compileContract ~ estimate ~ time ~ seedRoute ~ length ~ hashFast ~ hashSecure ~ sign ~ transactionSerialize
   }
 
   @Path("/script/compile")
@@ -63,7 +64,41 @@ case class UtilsApiRoute(timeService: Time, settings: RestAPISettings) extends A
       }
     }
   }
-
+  @Path("/script/compileContract")
+  @ApiOperation(value = "Compile Contract", notes = "Compiles string code to base64 contract representation", httpMethod = "POST")
+  @ApiImplicitParams(
+    Array(
+      new ApiImplicitParam(
+        name = "code",
+        required = true,
+        dataType = "string",
+        paramType = "body",
+        value = "Contract code",
+        example = "true"
+      )
+    ))
+  @ApiResponses(
+    Array(
+      new ApiResponse(code = 200, message = "base64 or error")
+    ))
+  def compileContract: Route = path("script" / "compileContract") {
+    (post & entity(as[String])) { code =>
+      complete(
+        ScriptCompiler
+          .contract(code)
+          .fold(
+            e => ScriptCompilerError(e), {
+              case (contract) =>
+                Json.obj(
+                  "script"     -> contract.bytes().base64,
+                  "complexity" -> 0,
+                  "extraFee"   -> CommonValidation.ScriptExtraFee
+                )
+            }
+          )
+      )
+    }
+  }
   @Path("/script/estimate")
   @ApiOperation(value = "Estimate", notes = "Estimates compiled code in Base64 representation", httpMethod = "POST")
   @ApiImplicitParams(
@@ -229,7 +264,7 @@ case class UtilsApiRoute(timeService: Time, settings: RestAPISettings) extends A
   def transactionSerialize: Route = (pathPrefix("transactionSerialize") & post) {
     handleExceptions(jsonExceptionHandler) {
       json[JsObject] { jsv =>
-        createTransaction((jsv \ "senderPublicKey").as[String], jsv)(tx => Json.obj("bytes" -> tx.bodyBytes().map(_.toInt & 0xff)))
+        parseOrCreateTransaction(jsv)(tx => Json.obj("bytes" -> tx.bodyBytes().map(_.toInt & 0xff)))
       }
     }
   }

@@ -1,6 +1,7 @@
 package com.wavesplatform.it.sync.matcher
 
 import com.typesafe.config.Config
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.it.api.SyncHttpApi._
 import com.wavesplatform.it.api.SyncMatcherHttpApi._
 import com.wavesplatform.it.api.{AssetDecimalsInfo, LevelResponse}
@@ -8,7 +9,6 @@ import com.wavesplatform.it.matcher.MatcherSuiteBase
 import com.wavesplatform.it.sync._
 import com.wavesplatform.it.sync.matcher.config.MatcherDefaultConfig._
 import com.wavesplatform.it.util._
-import com.wavesplatform.state.ByteStr
 import com.wavesplatform.transaction.assets.exchange.OrderType._
 import com.wavesplatform.transaction.assets.exchange.{AssetPair, _}
 import org.scalatest.prop.TableDrivenPropertyChecks
@@ -29,13 +29,20 @@ class MatcherTestSuite extends MatcherSuiteBase with TableDrivenPropertyChecks {
   "Check cross ordering between Alice and Bob" - {
     // Alice issues new asset
     val aliceAsset = aliceNode
-      .issue(aliceAcc.address, amountAssetName, "AliceCoin for matcher's tests", AssetQuantity, aliceCoinDecimals, reissuable = false, issueFee, 2)
+      .issue(aliceAcc.address,
+             amountAssetName,
+             "AliceCoin for matcher's tests",
+             AssetQuantity,
+             aliceCoinDecimals,
+             reissuable = false,
+             smartIssueFee,
+             2)
       .id
     val bobAsset = bobNode
-      .issue(bobAcc.address, "BobCoin1", "Bob's asset", someAssetAmount, 5, false, issueFee)
+      .issue(bobAcc.address, "BobCoin1", "Bob's asset", someAssetAmount, 5, false, smartIssueFee)
       .id
     val bobAsset2 = bobNode
-      .issue(bobAcc.address, "BobCoin2", "Bob's asset", someAssetAmount, 0, false, issueFee)
+      .issue(bobAcc.address, "BobCoin2", "Bob's asset", someAssetAmount, 0, false, smartIssueFee)
       .id
 
     Seq(aliceAsset, bobAsset, bobAsset2).foreach(matcherNode.waitForTransaction(_))

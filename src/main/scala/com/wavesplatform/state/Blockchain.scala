@@ -2,6 +2,7 @@ package com.wavesplatform.state
 
 import com.wavesplatform.account.{Address, Alias}
 import com.wavesplatform.block.{Block, BlockHeader}
+import com.wavesplatform.common.state.ByteStr
 import com.wavesplatform.state.reader.LeaseDetails
 import com.wavesplatform.transaction.lease.LeaseTransaction
 import com.wavesplatform.transaction.smart.script.Script
@@ -67,10 +68,15 @@ trait Blockchain {
   def accountData(acc: Address): AccountDataInfo
   def accountData(acc: Address, key: String): Option[DataEntry[_]]
 
+  def leaseBalance(address: Address): LeaseBalance
+
   def balance(address: Address, mayBeAssetId: Option[AssetId]): Long
 
-  def assetDistribution(assetId: ByteStr): Map[Address, Long]
-  def assetDistributionAtHeight(assetId: AssetId, height: Int, count: Int, fromAddress: Option[Address]): Either[ValidationError, Map[Address, Long]]
+  def assetDistribution(assetId: ByteStr): AssetDistribution
+  def assetDistributionAtHeight(assetId: AssetId,
+                                height: Int,
+                                count: Int,
+                                fromAddress: Option[Address]): Either[ValidationError, AssetDistributionPage]
   def wavesDistribution(height: Int): Map[Address, Long]
 
   // the following methods are used exclusively by patches
